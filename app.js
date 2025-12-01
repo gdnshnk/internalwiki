@@ -1,43 +1,5 @@
-// Mock data for demonstration
-const mockKnowledgeGraph = {
-    nodes: [
-        { id: 'policy-001', type: 'policy', label: 'Underwriting Ratio Threshold', x: 200, y: 100 },
-        { id: 'procedure-002', type: 'procedure', label: 'Due Diligence Workflow', x: 400, y: 200 },
-        { id: 'precedent-003', type: 'precedent', label: 'Mixed-Use Development Case', x: 600, y: 150 },
-        { id: 'evidence-004', type: 'evidence', label: 'Regulatory Guidance 2023', x: 300, y: 300 },
-        { id: 'policy-005', type: 'policy', label: 'Risk Appetite Framework', x: 500, y: 350 },
-    ],
-    edges: [
-        { source: 'policy-001', target: 'procedure-002', type: 'depends_on' },
-        { source: 'procedure-002', target: 'precedent-003', type: 'references' },
-        { source: 'policy-001', target: 'evidence-004', type: 'supported_by' },
-        { source: 'policy-005', target: 'policy-001', type: 'constrains' },
-    ]
-};
-
-const mockQueryResponses = {
-    'financing proposal': {
-        structured: true,
-        content: {
-            underwritingRatios: 'Loan-to-cost: 70% max, Debt-to-GDV: 60% max',
-            jurisdictionalConstraints: 'Planning conditions must be satisfied prior to funding',
-            mandatoryCovenants: 'Environmental impact assessment, Site safety certification',
-            historicalDeals: '3 similar deals in past 12 months',
-            proceduralSteps: ['Initial assessment', 'Due diligence', 'Board approval', 'Contract execution'],
-            complianceDeclarations: 'AML check required, Regulatory filing within 30 days'
-        }
-    },
-    'underwriting ratios': {
-        structured: true,
-        content: {
-            loanToCost: 'Maximum 70%',
-            debtToGDV: 'Maximum 60%',
-            evidence: 'Based on Regulatory Guidance 2023 and Risk Appetite Framework',
-            exceptions: 'Senior approval required for ratios above 65%',
-            lastReview: '2024-01-15'
-        }
-    }
-};
+// API Configuration
+const API_BASE_URL = 'http://localhost:3000/api';
 
 const mockNodeDetails = {
     'policy-001': {
@@ -126,6 +88,7 @@ document.addEventListener('DOMContentLoaded', () => {
 // Simplified - no navigation needed for Grokipedia-style design
 
 // Query Interface
+
 function initializeQueryInterface() {
     const queryInput = document.getElementById('queryInput');
     const querySubmit = document.getElementById('querySubmit');
@@ -138,7 +101,7 @@ function initializeQueryInterface() {
     });
 }
 
-function handleQuery() {
+async function handleQuery() {
     const queryInput = document.getElementById('queryInput');
     const query = queryInput.value.trim();
     
@@ -148,12 +111,33 @@ function handleQuery() {
     addQueryMessage('user', query);
     queryInput.value = '';
     
-    // Simulate response
-    setTimeout(() => {
-        const response = generateQueryResponse(query);
-        addQueryMessage('bot', null, response);
-    }, 500);
+    try {
+        // Call backend API
+        const response = await fetch(`${API_BASE_URL}/query`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                query: query,
+                role: 'analyst' // Default role, can be made dynamic
+            })
+        });
+        
+        const data = await response.json();
+        addQueryMessage('bot', null, data);
+    } catch (error) {
+        console.error('Query error:', error);
+        addQueryMessage('bot', null, {
+            structured: true,
+            content: {
+                error: 'Unable to connect to backend. Please ensure the API server is running.'
+            }
+        });
+    }
 }
+
+// handleQuery moved above - now calls backend API
 
 function addQueryMessage(type, text, structuredResponse = null) {
     const history = document.getElementById('queryHistory');
@@ -206,27 +190,7 @@ function addQueryMessage(type, text, structuredResponse = null) {
     history.scrollTop = history.scrollHeight;
 }
 
-function generateQueryResponse(query) {
-    const lowerQuery = query.toLowerCase();
-    
-    // Check for matching patterns
-    for (const [pattern, response] of Object.entries(mockQueryResponses)) {
-        if (lowerQuery.includes(pattern)) {
-            return response;
-        }
-    }
-    
-    // Default response
-    return {
-        structured: true,
-        content: {
-            policies: 'Relevant policies found',
-            procedures: 'Applicable procedures identified',
-            evidence: 'Supporting evidence available',
-            note: 'This is a demonstration response. In production, this would query the knowledge graph.'
-        }
-    };
-}
+// Query generation now handled by backend API
 
 // Removed complex views - keeping only query interface for Grokipedia-style design
 
