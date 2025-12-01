@@ -120,69 +120,12 @@ let selectedNode = null;
 
 // Initialize Application
 document.addEventListener('DOMContentLoaded', () => {
-    initializeNavigation();
     initializeQueryInterface();
-    initializeGraphExplorer();
-    initializeDecisionBuilder();
-    initializeReviewView();
-    initializeRoleSelector();
 });
 
-// Navigation
-function initializeNavigation() {
-    const navButtons = document.querySelectorAll('.nav-btn');
-    navButtons.forEach(btn => {
-        btn.addEventListener('click', () => {
-            const view = btn.dataset.view;
-            switchView(view);
-            
-            navButtons.forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-        });
-    });
-}
+// Simplified - no navigation needed for Grokipedia-style design
 
-function switchView(viewName) {
-    document.querySelectorAll('.view').forEach(view => {
-        view.classList.remove('active');
-    });
-    
-    const targetView = document.getElementById(`${viewName}-view`);
-    if (targetView) {
-        targetView.classList.add('active');
-        currentView = viewName;
-        
-        // Initialize view-specific features
-        if (viewName === 'graph') {
-            renderGraph();
-        }
-    }
-}
-
-// Role Selector
-function initializeRoleSelector() {
-    const roleSelector = document.getElementById('roleSelector');
-    roleSelector.addEventListener('change', (e) => {
-        currentRole = e.target.value;
-        updateRoleBasedUI();
-    });
-}
-
-function updateRoleBasedUI() {
-    // Update UI based on role (7.5 Role-Adaptive Navigation)
-    const roleConfig = {
-        analyst: { showExceptions: false, showPrecedents: true, showFullLogic: false },
-        senior: { showExceptions: true, showPrecedents: true, showFullLogic: true },
-        compliance: { showExceptions: false, showPrecedents: false, showFullLogic: true },
-        manager: { showExceptions: false, showPrecedents: true, showFullLogic: false }
-    };
-    
-    const config = roleConfig[currentRole];
-    // Apply role-based filtering to queries and displays
-    console.log('Role changed to:', currentRole, config);
-}
-
-// Query Interface (7.1)
+// Query Interface
 function initializeQueryInterface() {
     const queryInput = document.getElementById('queryInput');
     const querySubmit = document.getElementById('querySubmit');
@@ -192,16 +135,6 @@ function initializeQueryInterface() {
         if (e.key === 'Enter') {
             handleQuery();
         }
-    });
-    
-    // Suggestion chips
-    const suggestionChips = document.querySelectorAll('.suggestion-chip');
-    suggestionChips.forEach(chip => {
-        chip.addEventListener('click', () => {
-            const query = chip.dataset.query;
-            queryInput.value = query;
-            handleQuery();
-        });
     });
 }
 
@@ -227,24 +160,22 @@ function addQueryMessage(type, text, structuredResponse = null) {
     const messageDiv = document.createElement('div');
     messageDiv.className = `query-message ${type}`;
     
+    const now = new Date();
+    const timeStr = 'Just now';
+    
     if (type === 'user') {
         messageDiv.innerHTML = `
-            <div class="message-avatar">👤</div>
-            <div class="message-content-wrapper">
-                <div class="message-header">
-                    <span class="message-role">You</span>
-                    <span class="message-time">Just now</span>
-                </div>
-                <div class="message-content">
-                    <p>${text}</p>
-                </div>
+            <div class="message-content">
+                <p class="message-text">${text}</p>
             </div>
+            <div class="message-time">${timeStr}</div>
         `;
     } else {
         let content = '';
         
         if (structuredResponse && structuredResponse.structured) {
             content = `
+                <p class="message-text">${text}</p>
                 <div class="structured-output">
                     <h4>Structured Institutional Logic</h4>
                     ${Object.entries(structuredResponse.content).map(([key, value]) => {
@@ -259,20 +190,15 @@ function addQueryMessage(type, text, structuredResponse = null) {
                 </div>
             `;
         } else {
-            content = `<p>${structuredResponse?.text || 'I understand your query. Here is the relevant institutional logic...'}</p>`;
+            content = `<p class="message-text">${structuredResponse?.text || 'I understand your query. Here is the relevant institutional logic...'}</p>`;
         }
         
         messageDiv.innerHTML = `
-            <div class="message-avatar">🤖</div>
-            <div class="message-content-wrapper">
-                <div class="message-header">
-                    <span class="message-role">InternalWiki System</span>
-                    <span class="message-time">Just now</span>
-                </div>
-                <div class="message-content">
-                    ${content}
-                </div>
+            <div class="message-content">
+                ${content}
+                <p class="message-meta">Response generated</p>
             </div>
+            <div class="message-time">${timeStr}</div>
         `;
     }
     
@@ -302,282 +228,5 @@ function generateQueryResponse(query) {
     };
 }
 
-// Graph Explorer (7.2)
-function initializeGraphExplorer() {
-    const zoomIn = document.getElementById('zoomIn');
-    const zoomOut = document.getElementById('zoomOut');
-    const resetView = document.getElementById('resetView');
-    const filterType = document.getElementById('filterType');
-    
-    zoomIn.addEventListener('click', () => console.log('Zoom in'));
-    zoomOut.addEventListener('click', () => console.log('Zoom out'));
-    resetView.addEventListener('click', () => renderGraph());
-    filterType.addEventListener('change', (e) => filterGraph(e.target.value));
-}
-
-function renderGraph() {
-    const svg = document.getElementById('graphSvg');
-    svg.innerHTML = '';
-    
-    const container = svg.parentElement;
-    const width = container.clientWidth || 1200;
-    const height = 600;
-    svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
-    svg.setAttribute('width', width);
-    svg.setAttribute('height', height);
-    
-    // Render edges
-    mockKnowledgeGraph.edges.forEach(edge => {
-        const sourceNode = mockKnowledgeGraph.nodes.find(n => n.id === edge.source);
-        const targetNode = mockKnowledgeGraph.nodes.find(n => n.id === edge.target);
-        
-        if (sourceNode && targetNode) {
-            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-            line.setAttribute('x1', sourceNode.x);
-            line.setAttribute('y1', sourceNode.y);
-            line.setAttribute('x2', targetNode.x);
-            line.setAttribute('y2', targetNode.y);
-            line.setAttribute('stroke', 'rgba(255, 255, 255, 0.2)');
-            line.setAttribute('stroke-width', '2');
-            line.style.cursor = 'pointer';
-            svg.appendChild(line);
-        }
-    });
-    
-    // Render nodes
-    mockKnowledgeGraph.nodes.forEach(node => {
-        const nodeGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-        
-        // Node circle
-        const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
-        circle.setAttribute('cx', node.x);
-        circle.setAttribute('cy', node.y);
-        circle.setAttribute('r', 35);
-        circle.setAttribute('fill', getNodeColor(node.type));
-        circle.setAttribute('stroke', '#ffffff');
-        circle.setAttribute('stroke-width', '3');
-        circle.style.cursor = 'pointer';
-        circle.style.transition = 'all 0.3s ease';
-        circle.addEventListener('click', () => selectGraphNode(node.id));
-        circle.addEventListener('mouseenter', () => {
-            circle.setAttribute('r', 40);
-        });
-        circle.addEventListener('mouseleave', () => {
-            circle.setAttribute('r', 35);
-        });
-        nodeGroup.appendChild(circle);
-        
-        // Node label background
-        const labelBg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-        labelBg.setAttribute('x', node.x - 60);
-        labelBg.setAttribute('y', node.y + 45);
-        labelBg.setAttribute('width', 120);
-        labelBg.setAttribute('height', 20);
-        labelBg.setAttribute('rx', '4');
-        labelBg.setAttribute('fill', 'rgba(31, 31, 31, 0.9)');
-        nodeGroup.appendChild(labelBg);
-        
-        // Node label
-        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        text.setAttribute('x', node.x);
-        text.setAttribute('y', node.y + 58);
-        text.setAttribute('text-anchor', 'middle');
-        text.setAttribute('font-size', '11');
-        text.setAttribute('fill', '#ffffff');
-        text.setAttribute('font-weight', '500');
-        text.textContent = node.label.substring(0, 18);
-        nodeGroup.appendChild(text);
-        
-        svg.appendChild(nodeGroup);
-    });
-}
-
-function getNodeColor(type) {
-    const colors = {
-        policy: '#6366f1',
-        procedure: '#10b981',
-        precedent: '#f59e0b',
-        evidence: '#8b5cf6'
-    };
-    return colors[type] || '#808080';
-}
-
-function filterGraph(type) {
-    renderGraph(); // Re-render with filter applied
-    console.log('Filtering by type:', type);
-}
-
-function selectGraphNode(nodeId) {
-    console.log('Selected node:', nodeId);
-    // Could switch to review view and show node details
-}
-
-// Decision Builder (7.3)
-function initializeDecisionBuilder() {
-    const blocks = document.querySelectorAll('.block-item');
-    const canvas = document.getElementById('workspaceCanvas');
-    
-    blocks.forEach(block => {
-        block.addEventListener('dragstart', (e) => {
-            e.dataTransfer.setData('text/plain', block.dataset.type);
-        });
-    });
-    
-    canvas.addEventListener('dragover', (e) => {
-        e.preventDefault();
-    });
-    
-    canvas.addEventListener('drop', (e) => {
-        e.preventDefault();
-        const blockType = e.dataTransfer.getData('text/plain');
-        addBlockToCanvas(blockType, e.offsetX, e.offsetY);
-    });
-}
-
-function addBlockToCanvas(type, x, y) {
-    const canvas = document.getElementById('workspaceCanvas');
-    const empty = canvas.querySelector('.workspace-empty');
-    if (empty) empty.remove();
-    
-    const block = document.createElement('div');
-    block.className = 'workspace-block';
-    block.style.position = 'absolute';
-    block.style.left = `${x}px`;
-    block.style.top = `${y}px`;
-    block.dataset.type = type;
-    block.textContent = type.charAt(0).toUpperCase() + type.slice(1);
-    block.addEventListener('click', () => selectBlock(block));
-    
-    canvas.appendChild(block);
-}
-
-function selectBlock(block) {
-    document.querySelectorAll('.workspace-block').forEach(b => b.classList.remove('selected'));
-    block.classList.add('selected');
-    
-    showBlockProperties(block.dataset.type);
-}
-
-function showBlockProperties(type) {
-    const panel = document.getElementById('propertiesPanel');
-    panel.innerHTML = `
-        <div class="property-field">
-            <label>Type</label>
-            <input type="text" value="${type}" readonly>
-        </div>
-        <div class="property-field">
-            <label>Name</label>
-            <input type="text" placeholder="Enter name...">
-        </div>
-        <div class="property-field">
-            <label>Value</label>
-            <input type="text" placeholder="Enter value...">
-        </div>
-        <div class="property-field">
-            <label>Evidence Reference</label>
-            <input type="text" placeholder="Link to evidence...">
-        </div>
-        <div class="property-field">
-            <label>Applicability Conditions</label>
-            <textarea placeholder="Define conditions..."></textarea>
-        </div>
-    `;
-}
-
-// Review & Evidence View (7.4)
-function initializeReviewView() {
-    const nodeItems = document.querySelectorAll('.node-card');
-    nodeItems.forEach(item => {
-        item.addEventListener('click', () => {
-            const nodeId = item.dataset.node;
-            selectReviewNode(nodeId);
-            
-            nodeItems.forEach(i => i.classList.remove('selected'));
-            item.classList.add('selected');
-        });
-    });
-}
-
-function selectReviewNode(nodeId) {
-    selectedNode = nodeId;
-    const details = mockNodeDetails[nodeId];
-    
-    if (!details) {
-        document.getElementById('detailTitle').textContent = 'Node details not available';
-        return;
-    }
-    
-    document.getElementById('detailTitle').textContent = details.title;
-    
-    // Render evidence
-    const evidenceList = document.getElementById('evidenceList');
-    if (details.evidence && details.evidence.length > 0) {
-        evidenceList.innerHTML = details.evidence.map(ev => `
-            <div class="evidence-item">
-                <strong>${ev.source}</strong>
-                ${ev.section ? `<div style="margin-top: 0.5rem; color: var(--text-secondary); font-size: 0.875rem;">Section: ${ev.section}</div>` : ''}
-                ${ev.date ? `<div style="margin-top: 0.25rem; color: var(--text-tertiary); font-size: 0.8rem;">Date: ${ev.date}</div>` : ''}
-                ${ev.author ? `<div style="margin-top: 0.25rem; color: var(--text-tertiary); font-size: 0.8rem;">Author: ${ev.author}</div>` : ''}
-            </div>
-        `).join('');
-    } else {
-        evidenceList.innerHTML = '<div class="empty-card"><span class="empty-icon">📄</span><p>No evidence references available</p></div>';
-    }
-    
-    // Render lineage
-    const lineageInfo = document.getElementById('lineageInfo');
-    lineageInfo.innerHTML = `
-        <div class="lineage-item">
-            <strong>Author:</strong> ${details.lineage.author}
-        </div>
-        <div class="lineage-item">
-            <strong>Created:</strong> ${details.lineage.created}
-        </div>
-        <div class="lineage-item">
-            <strong>Last Modified:</strong> ${details.lineage.lastModified} by ${details.lineage.modifiedBy}
-        </div>
-        <div class="lineage-item">
-            <strong>Rationale:</strong> ${details.lineage.rationale}
-        </div>
-    `;
-    
-    // Render version history
-    const versionHistory = document.getElementById('versionHistory');
-    if (details.versions && details.versions.length > 0) {
-        versionHistory.innerHTML = details.versions.map(v => `
-            <div class="version-item">
-                <div class="version-info">
-                    <strong>Version ${v.version}</strong>
-                    <div style="margin-top: 0.5rem; color: var(--text-secondary);">${v.changes}</div>
-                    <div class="version-date" style="margin-top: 0.25rem;">By ${v.author}</div>
-                </div>
-                <div class="version-date">${v.date}</div>
-            </div>
-        `).join('');
-    } else {
-        versionHistory.innerHTML = '<div class="empty-card"><span class="empty-icon">📜</span><p>No version history available</p></div>';
-    }
-    
-    // Render approval workflow
-    const approvalWorkflow = document.getElementById('approvalWorkflow');
-    if (details.approvals && details.approvals.length > 0) {
-        approvalWorkflow.innerHTML = details.approvals.map(a => `
-            <div class="approval-step ${a.status}">
-                <div>
-                    <strong>${a.step}</strong>
-                    ${a.approver ? `<div style="margin-top: 0.5rem; color: var(--text-secondary); font-size: 0.875rem;">Approver: ${a.approver}</div>` : ''}
-                </div>
-                <div style="text-align: right;">
-                    <span class="node-status ${a.status}" style="display: inline-block; margin-bottom: 0.25rem;">${a.status === 'completed' ? '✓ Completed' : '⏳ Pending'}</span>
-                    ${a.date ? `<div class="version-date">${a.date}</div>` : ''}
-                </div>
-            </div>
-        `).join('');
-    } else {
-        approvalWorkflow.innerHTML = '<div class="empty-card"><span class="empty-icon">✅</span><p>No approval workflow available</p></div>';
-    }
-    
-    // Update subtitle
-    document.getElementById('detailSubtitle').textContent = `${details.type} • ${details.status}`;
-}
+// Removed complex views - keeping only query interface for Grokipedia-style design
 
