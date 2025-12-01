@@ -1,9 +1,9 @@
-/* Grokipedia-Inspired Design System */
+/* Grokipedia-Exact Design System */
 :root {
     /* Colors - Pure Dark Theme */
     --bg-primary: #000000;
     --bg-secondary: #1a1a1a;
-    --bg-tertiary: #2a2a2a;
+    --bg-search: #2a2a2a;
     
     --text-primary: #ffffff;
     --text-secondary: #b0b0b0;
@@ -14,14 +14,6 @@
     /* Typography */
     --font-display: 'Playfair Display', serif;
     --font-body: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    
-    /* Spacing */
-    --spacing-xs: 0.5rem;
-    --spacing-sm: 1rem;
-    --spacing-md: 1.5rem;
-    --spacing-lg: 2rem;
-    --spacing-xl: 3rem;
-    --spacing-xxl: 4rem;
 }
 
 /* Reset */
@@ -44,7 +36,7 @@ body {
 .app-container {
     max-width: 900px;
     margin: 0 auto;
-    padding: var(--spacing-xxl) var(--spacing-lg);
+    padding: 80px 24px 40px;
     min-height: 100vh;
     display: flex;
     flex-direction: column;
@@ -53,53 +45,48 @@ body {
 /* Header */
 .main-header {
     text-align: center;
-    margin-bottom: var(--spacing-xxl);
-    padding-top: var(--spacing-xxl);
+    margin-bottom: 60px;
+    padding-top: 40px;
 }
 
 .main-title {
     font-family: var(--font-display);
-    font-size: 4rem;
+    font-size: 64px;
     font-weight: 400;
     color: var(--text-primary);
     margin: 0;
     display: inline-block;
     letter-spacing: -0.02em;
+    line-height: 1.1;
 }
 
 .version {
     font-family: var(--font-body);
-    font-size: 0.875rem;
+    font-size: 14px;
     color: var(--text-secondary);
-    margin-left: var(--spacing-sm);
+    margin-left: 12px;
     font-weight: 300;
+    vertical-align: baseline;
 }
 
 /* Search Container */
 .search-container {
-    margin-bottom: var(--spacing-xl);
+    margin-bottom: 40px;
 }
 
 .search-bar {
     display: flex;
     align-items: center;
-    background: var(--bg-secondary);
+    background: var(--bg-search);
     border: 1px solid var(--border-color);
     border-radius: 8px;
-    padding: var(--spacing-md) var(--spacing-lg);
+    padding: 16px 20px;
     max-width: 100%;
-    transition: all 0.2s ease;
+    transition: border-color 0.2s ease;
 }
 
 .search-bar:focus-within {
     border-color: var(--text-secondary);
-}
-
-.search-icon {
-    font-size: 1.25rem;
-    color: var(--text-secondary);
-    margin-right: var(--spacing-md);
-    flex-shrink: 0;
 }
 
 .search-input {
@@ -107,10 +94,11 @@ body {
     background: transparent;
     border: none;
     color: var(--text-primary);
-    font-size: 1rem;
+    font-size: 16px;
     font-family: var(--font-body);
-    outline: none;
     font-weight: 400;
+    outline: none;
+    line-height: 1.5;
 }
 
 .search-input::placeholder {
@@ -122,13 +110,15 @@ body {
     border: none;
     color: var(--text-secondary);
     cursor: pointer;
-    padding: var(--spacing-xs);
-    margin-left: var(--spacing-md);
+    padding: 4px 8px;
+    margin-left: 12px;
     flex-shrink: 0;
     transition: color 0.2s ease;
     display: flex;
     align-items: center;
     justify-content: center;
+    width: 32px;
+    height: 32px;
 }
 
 .search-submit:hover {
@@ -136,28 +126,29 @@ body {
 }
 
 .submit-icon {
-    font-size: 1.25rem;
+    font-size: 18px;
     font-weight: 300;
+    line-height: 1;
 }
 
 /* Content Area */
 .content-area {
     flex: 1;
-    margin-bottom: var(--spacing-xl);
+    margin-bottom: 60px;
 }
 
 .query-history {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-lg);
+    gap: 24px;
 }
 
 .query-message {
     display: flex;
     justify-content: space-between;
     align-items: flex-start;
-    gap: var(--spacing-md);
-    padding: var(--spacing-md) 0;
+    gap: 20px;
+    padding: 16px 0;
     border-bottom: 1px solid var(--border-color);
 }
 
@@ -171,30 +162,32 @@ body {
 
 .message-text {
     color: var(--text-primary);
-    font-size: 1rem;
+    font-size: 16px;
     font-weight: 400;
-    margin-bottom: var(--spacing-xs);
+    margin-bottom: 8px;
     line-height: 1.6;
 }
 
 .message-meta {
     color: var(--text-secondary);
-    font-size: 0.875rem;
+    font-size: 14px;
     font-weight: 300;
+    line-height: 1.5;
 }
 
 .message-time {
     color: var(--text-tertiary);
-    font-size: 0.875rem;
+    font-size: 14px;
     font-weight: 300;
     white-space: nowrap;
     flex-shrink: 0;
+    line-height: 1.5;
 }
 
 /* Structured Output */
 .structured-output {
-    margin-top: var(--spacing-md);
-    padding: var(--spacing-md);
+    margin-top: 16px;
+    padding: 16px;
     background: var(--bg-secondary);
     border-radius: 6px;
     border: 1px solid var(--border-color);
@@ -202,16 +195,17 @@ body {
 
 .structured-output h4 {
     color: var(--text-primary);
-    font-size: 0.875rem;
+    font-size: 14px;
     font-weight: 600;
-    margin-bottom: var(--spacing-sm);
+    margin-bottom: 12px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
+    line-height: 1.4;
 }
 
 .structured-item {
-    margin-bottom: var(--spacing-sm);
-    padding: var(--spacing-sm);
+    margin-bottom: 12px;
+    padding: 12px;
     background: var(--bg-primary);
     border-radius: 4px;
     border-left: 2px solid var(--text-secondary);
@@ -220,14 +214,16 @@ body {
 .structured-item strong {
     color: var(--text-primary);
     display: block;
-    margin-bottom: var(--spacing-xs);
+    margin-bottom: 6px;
     font-weight: 600;
-    font-size: 0.875rem;
+    font-size: 14px;
+    line-height: 1.4;
 }
 
 .structured-item span {
     color: var(--text-secondary);
-    font-size: 0.875rem;
+    font-size: 14px;
+    line-height: 1.5;
 }
 
 /* Footer */
@@ -235,7 +231,7 @@ body {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding-top: var(--spacing-xl);
+    padding-top: 40px;
     border-top: 1px solid var(--border-color);
     margin-top: auto;
 }
@@ -243,26 +239,29 @@ body {
 .footer-stats {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-xs);
+    gap: 8px;
 }
 
 .stats-label {
     color: var(--text-secondary);
-    font-size: 0.875rem;
+    font-size: 14px;
     font-weight: 300;
+    line-height: 1.5;
 }
 
 .stats-value {
     color: var(--text-primary);
-    font-size: 1.5rem;
+    font-size: 24px;
     font-weight: 600;
     font-family: var(--font-body);
+    line-height: 1.2;
 }
 
 .footer-links {
     color: var(--text-secondary);
-    font-size: 0.875rem;
+    font-size: 14px;
     font-weight: 300;
+    line-height: 1.5;
 }
 
 .footer-links a {
@@ -278,17 +277,22 @@ body {
 /* Responsive */
 @media (max-width: 768px) {
     .app-container {
-        padding: var(--spacing-lg) var(--spacing-md);
+        padding: 40px 16px 32px;
     }
     
     .main-title {
-        font-size: 3rem;
+        font-size: 48px;
+    }
+    
+    .main-header {
+        margin-bottom: 40px;
+        padding-top: 20px;
     }
     
     .main-footer {
         flex-direction: column;
         align-items: flex-start;
-        gap: var(--spacing-md);
+        gap: 20px;
     }
     
     .query-message {
