@@ -193,6 +193,16 @@ function initializeQueryInterface() {
             handleQuery();
         }
     });
+    
+    // Suggestion chips
+    const suggestionChips = document.querySelectorAll('.suggestion-chip');
+    suggestionChips.forEach(chip => {
+        chip.addEventListener('click', () => {
+            const query = chip.dataset.query;
+            queryInput.value = query;
+            handleQuery();
+        });
+    });
 }
 
 function handleQuery() {
@@ -219,12 +229,15 @@ function addQueryMessage(type, text, structuredResponse = null) {
     
     if (type === 'user') {
         messageDiv.innerHTML = `
-            <div class="message-header">
-                <span class="message-icon">👤</span>
-                <span class="message-role">You</span>
-            </div>
-            <div class="message-content">
-                <p>${text}</p>
+            <div class="message-avatar">👤</div>
+            <div class="message-content-wrapper">
+                <div class="message-header">
+                    <span class="message-role">You</span>
+                    <span class="message-time">Just now</span>
+                </div>
+                <div class="message-content">
+                    <p>${text}</p>
+                </div>
             </div>
         `;
     } else {
@@ -250,12 +263,15 @@ function addQueryMessage(type, text, structuredResponse = null) {
         }
         
         messageDiv.innerHTML = `
-            <div class="message-header">
-                <span class="message-icon">🤖</span>
-                <span class="message-role">System</span>
-            </div>
-            <div class="message-content">
-                ${content}
+            <div class="message-avatar">🤖</div>
+            <div class="message-content-wrapper">
+                <div class="message-header">
+                    <span class="message-role">InternalWiki System</span>
+                    <span class="message-time">Just now</span>
+                </div>
+                <div class="message-content">
+                    ${content}
+                </div>
             </div>
         `;
     }
@@ -303,9 +319,12 @@ function renderGraph() {
     const svg = document.getElementById('graphSvg');
     svg.innerHTML = '';
     
-    const width = svg.clientWidth || 800;
+    const container = svg.parentElement;
+    const width = container.clientWidth || 1200;
     const height = 600;
     svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+    svg.setAttribute('width', width);
+    svg.setAttribute('height', height);
     
     // Render edges
     mockKnowledgeGraph.edges.forEach(edge => {
@@ -318,8 +337,9 @@ function renderGraph() {
             line.setAttribute('y1', sourceNode.y);
             line.setAttribute('x2', targetNode.x);
             line.setAttribute('y2', targetNode.y);
-            line.setAttribute('stroke', '#999');
+            line.setAttribute('stroke', 'rgba(255, 255, 255, 0.2)');
             line.setAttribute('stroke-width', '2');
+            line.style.cursor = 'pointer';
             svg.appendChild(line);
         }
     });
@@ -332,22 +352,40 @@ function renderGraph() {
         const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
         circle.setAttribute('cx', node.x);
         circle.setAttribute('cy', node.y);
-        circle.setAttribute('r', 30);
+        circle.setAttribute('r', 35);
         circle.setAttribute('fill', getNodeColor(node.type));
-        circle.setAttribute('stroke', '#000');
-        circle.setAttribute('stroke-width', '2');
+        circle.setAttribute('stroke', '#ffffff');
+        circle.setAttribute('stroke-width', '3');
         circle.style.cursor = 'pointer';
+        circle.style.transition = 'all 0.3s ease';
         circle.addEventListener('click', () => selectGraphNode(node.id));
+        circle.addEventListener('mouseenter', () => {
+            circle.setAttribute('r', 40);
+        });
+        circle.addEventListener('mouseleave', () => {
+            circle.setAttribute('r', 35);
+        });
         nodeGroup.appendChild(circle);
+        
+        // Node label background
+        const labelBg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        labelBg.setAttribute('x', node.x - 60);
+        labelBg.setAttribute('y', node.y + 45);
+        labelBg.setAttribute('width', 120);
+        labelBg.setAttribute('height', 20);
+        labelBg.setAttribute('rx', '4');
+        labelBg.setAttribute('fill', 'rgba(31, 31, 31, 0.9)');
+        nodeGroup.appendChild(labelBg);
         
         // Node label
         const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
         text.setAttribute('x', node.x);
-        text.setAttribute('y', node.y + 50);
+        text.setAttribute('y', node.y + 58);
         text.setAttribute('text-anchor', 'middle');
-        text.setAttribute('font-size', '12');
-        text.setAttribute('fill', '#000');
-        text.textContent = node.label.substring(0, 20);
+        text.setAttribute('font-size', '11');
+        text.setAttribute('fill', '#ffffff');
+        text.setAttribute('font-weight', '500');
+        text.textContent = node.label.substring(0, 18);
         nodeGroup.appendChild(text);
         
         svg.appendChild(nodeGroup);
@@ -356,12 +394,12 @@ function renderGraph() {
 
 function getNodeColor(type) {
     const colors = {
-        policy: '#4a90e2',
-        procedure: '#50c878',
-        precedent: '#ff6b6b',
-        evidence: '#9b59b6'
+        policy: '#6366f1',
+        procedure: '#10b981',
+        precedent: '#f59e0b',
+        evidence: '#8b5cf6'
     };
-    return colors[type] || '#999';
+    return colors[type] || '#808080';
 }
 
 function filterGraph(type) {
@@ -398,8 +436,8 @@ function initializeDecisionBuilder() {
 
 function addBlockToCanvas(type, x, y) {
     const canvas = document.getElementById('workspaceCanvas');
-    const hint = canvas.querySelector('.workspace-hint');
-    if (hint) hint.remove();
+    const empty = canvas.querySelector('.workspace-empty');
+    if (empty) empty.remove();
     
     const block = document.createElement('div');
     block.className = 'workspace-block';
@@ -448,7 +486,7 @@ function showBlockProperties(type) {
 
 // Review & Evidence View (7.4)
 function initializeReviewView() {
-    const nodeItems = document.querySelectorAll('.node-item');
+    const nodeItems = document.querySelectorAll('.node-card');
     nodeItems.forEach(item => {
         item.addEventListener('click', () => {
             const nodeId = item.dataset.node;
@@ -477,13 +515,13 @@ function selectReviewNode(nodeId) {
         evidenceList.innerHTML = details.evidence.map(ev => `
             <div class="evidence-item">
                 <strong>${ev.source}</strong>
-                ${ev.section ? `<span>Section: ${ev.section}</span>` : ''}
-                ${ev.date ? `<span>Date: ${ev.date}</span>` : ''}
-                ${ev.author ? `<span>Author: ${ev.author}</span>` : ''}
+                ${ev.section ? `<div style="margin-top: 0.5rem; color: var(--text-secondary); font-size: 0.875rem;">Section: ${ev.section}</div>` : ''}
+                ${ev.date ? `<div style="margin-top: 0.25rem; color: var(--text-tertiary); font-size: 0.8rem;">Date: ${ev.date}</div>` : ''}
+                ${ev.author ? `<div style="margin-top: 0.25rem; color: var(--text-tertiary); font-size: 0.8rem;">Author: ${ev.author}</div>` : ''}
             </div>
         `).join('');
     } else {
-        evidenceList.innerHTML = '<p class="empty-state">No evidence references available</p>';
+        evidenceList.innerHTML = '<div class="empty-card"><span class="empty-icon">📄</span><p>No evidence references available</p></div>';
     }
     
     // Render lineage
@@ -510,14 +548,14 @@ function selectReviewNode(nodeId) {
             <div class="version-item">
                 <div class="version-info">
                     <strong>Version ${v.version}</strong>
-                    <div>${v.changes}</div>
-                    <div class="version-date">By ${v.author}</div>
+                    <div style="margin-top: 0.5rem; color: var(--text-secondary);">${v.changes}</div>
+                    <div class="version-date" style="margin-top: 0.25rem;">By ${v.author}</div>
                 </div>
                 <div class="version-date">${v.date}</div>
             </div>
         `).join('');
     } else {
-        versionHistory.innerHTML = '<p class="empty-state">No version history available</p>';
+        versionHistory.innerHTML = '<div class="empty-card"><span class="empty-icon">📜</span><p>No version history available</p></div>';
     }
     
     // Render approval workflow
@@ -527,16 +565,19 @@ function selectReviewNode(nodeId) {
             <div class="approval-step ${a.status}">
                 <div>
                     <strong>${a.step}</strong>
-                    ${a.approver ? `<div>Approver: ${a.approver}</div>` : ''}
+                    ${a.approver ? `<div style="margin-top: 0.5rem; color: var(--text-secondary); font-size: 0.875rem;">Approver: ${a.approver}</div>` : ''}
                 </div>
-                <div>
-                    <span class="node-status ${a.status}">${a.status}</span>
+                <div style="text-align: right;">
+                    <span class="node-status ${a.status}" style="display: inline-block; margin-bottom: 0.25rem;">${a.status === 'completed' ? '✓ Completed' : '⏳ Pending'}</span>
                     ${a.date ? `<div class="version-date">${a.date}</div>` : ''}
                 </div>
             </div>
         `).join('');
     } else {
-        approvalWorkflow.innerHTML = '<p class="empty-state">No approval workflow available</p>';
+        approvalWorkflow.innerHTML = '<div class="empty-card"><span class="empty-icon">✅</span><p>No approval workflow available</p></div>';
     }
+    
+    // Update subtitle
+    document.getElementById('detailSubtitle').textContent = `${details.type} • ${details.status}`;
 }
 
