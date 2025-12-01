@@ -7,377 +7,55 @@
     <link rel="stylesheet" href="styles.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Playfair+Display:wght@400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;700&family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
 </head>
 <body>
-    <!-- Navigation -->
-    <nav class="navbar">
-        <div class="nav-container">
-            <div class="nav-brand">
-                <h1 class="brand-title">InternalWiki.com</h1>
-                <span class="brand-subtitle">Knowledge Infrastructure</span>
-            </div>
-            <div class="nav-menu">
-                <button class="nav-btn active" data-view="query">
-                    <span class="nav-icon">💬</span>
-                    <span>Query</span>
-                </button>
-                <button class="nav-btn" data-view="graph">
-                    <span class="nav-icon">🕸️</span>
-                    <span>Graph</span>
-                </button>
-                <button class="nav-btn" data-view="builder">
-                    <span class="nav-icon">⚙️</span>
-                    <span>Builder</span>
-                </button>
-                <button class="nav-btn" data-view="review">
-                    <span class="nav-icon">📋</span>
-                    <span>Review</span>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="main-header">
+            <h1 class="main-title">InternalWiki.com</h1>
+            <span class="version">v0.1</span>
+        </header>
+
+        <!-- Main Search Interface -->
+        <div class="search-container">
+            <div class="search-bar">
+                <span class="search-icon">🔍</span>
+                <input type="text" id="queryInput" class="search-input" placeholder="Ask about policies, procedures, or institutional knowledge..." />
+                <button id="querySubmit" class="search-submit">
+                    <span class="submit-icon">↑</span>
                 </button>
             </div>
-            <div class="nav-user">
-                <div class="user-menu">
-                    <select id="roleSelector" class="role-selector">
-                        <option value="analyst">👤 Junior Analyst</option>
-                        <option value="senior">👔 Senior Decision Maker</option>
-                        <option value="compliance">🛡️ Compliance Officer</option>
-                        <option value="manager">🏗️ Site Manager</option>
-                    </select>
+        </div>
+
+        <!-- Query History -->
+        <div class="content-area">
+            <div class="query-history" id="queryHistory">
+                <div class="query-message bot">
+                    <div class="message-content">
+                        <p class="message-text">Welcome to InternalWiki.com. Ask me about policies, procedures, precedents, or institutional knowledge.</p>
+                        <p class="message-meta">New system ready</p>
+                    </div>
+                    <div class="message-time">Just now</div>
                 </div>
             </div>
         </div>
-    </nav>
 
-    <!-- Main Content Area -->
-    <main class="main-content">
-        <!-- Query View (7.1 Conversational Layer) -->
-        <section id="query-view" class="view active">
-            <div class="view-hero">
-                <h2 class="view-title">Ask Your Organization</h2>
-                <p class="view-subtitle">Query institutional knowledge in natural language</p>
+        <!-- Footer -->
+        <footer class="main-footer">
+            <div class="footer-stats">
+                <span class="stats-label">Knowledge Nodes</span>
+                <span class="stats-value">0</span>
             </div>
-            
-            <div class="query-container">
-                <div class="query-history" id="queryHistory">
-                    <div class="query-message bot">
-                        <div class="message-avatar">🤖</div>
-                        <div class="message-content-wrapper">
-                            <div class="message-header">
-                                <span class="message-role">InternalWiki System</span>
-                                <span class="message-time">Just now</span>
-                            </div>
-                            <div class="message-content">
-                                <p>Welcome to InternalWiki.com. I can help you find policies, procedures, precedents, and institutional logic.</p>
-                                <div class="message-suggestions">
-                                    <button class="suggestion-chip" data-query="How do I structure a financing proposal?">💼 Financing Proposal</button>
-                                    <button class="suggestion-chip" data-query="What are the underwriting ratios?">📊 Underwriting Ratios</button>
-                                    <button class="suggestion-chip" data-query="Show me due diligence procedures">✅ Due Diligence</button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="query-input-wrapper">
-                    <div class="query-input-container">
-                        <span class="input-icon">🔍</span>
-                        <input type="text" id="queryInput" class="query-input" placeholder="Ask about policies, procedures, or institutional knowledge..." />
-                        <button id="querySubmit" class="query-submit">
-                            <span>Send</span>
-                            <span class="submit-icon">→</span>
-                        </button>
-                    </div>
-                </div>
+            <div class="footer-links">
+                <a href="#">Terms of Service</a>
+                <span> • </span>
+                <a href="#">Privacy Policy</a>
+                <span> • </span>
+                <a href="#">AUP</a>
             </div>
-        </section>
-
-        <!-- Graph Explorer View (7.2) -->
-        <section id="graph-view" class="view">
-            <div class="view-hero">
-                <h2 class="view-title">Knowledge Graph Explorer</h2>
-                <p class="view-subtitle">Visualize institutional knowledge as interconnected networks</p>
-            </div>
-            
-            <div class="graph-container">
-                <div class="graph-toolbar">
-                    <div class="toolbar-group">
-                        <button class="toolbar-btn" id="zoomIn" title="Zoom In">
-                            <span>➕</span>
-                        </button>
-                        <button class="toolbar-btn" id="zoomOut" title="Zoom Out">
-                            <span>➖</span>
-                        </button>
-                        <button class="toolbar-btn" id="resetView" title="Reset View">
-                            <span>🔄</span>
-                        </button>
-                    </div>
-                    <div class="toolbar-group">
-                        <select id="filterType" class="filter-select">
-                            <option value="all">All Types</option>
-                            <option value="policy">📜 Policies</option>
-                            <option value="procedure">⚙️ Procedures</option>
-                            <option value="precedent">📚 Precedents</option>
-                            <option value="evidence">📄 Evidence</option>
-                        </select>
-                    </div>
-                </div>
-                
-                <div class="graph-canvas-wrapper">
-                    <div class="graph-canvas" id="graphCanvas">
-                        <svg id="graphSvg" width="100%" height="100%"></svg>
-                    </div>
-                </div>
-                
-                <div class="graph-legend">
-                    <div class="legend-title">Node Types</div>
-                    <div class="legend-items">
-                        <div class="legend-item">
-                            <span class="legend-dot policy"></span>
-                            <span>Policy</span>
-                        </div>
-                        <div class="legend-item">
-                            <span class="legend-dot procedure"></span>
-                            <span>Procedure</span>
-                        </div>
-                        <div class="legend-item">
-                            <span class="legend-dot precedent"></span>
-                            <span>Precedent</span>
-                        </div>
-                        <div class="legend-item">
-                            <span class="legend-dot evidence"></span>
-                            <span>Evidence</span>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- Decision Builder View (7.3) -->
-        <section id="builder-view" class="view">
-            <div class="view-hero">
-                <h2 class="view-title">Decision Builder</h2>
-                <p class="view-subtitle">Construct policies and workflows using composable building blocks</p>
-            </div>
-            
-            <div class="builder-layout">
-                <div class="builder-sidebar">
-                    <div class="sidebar-header">
-                        <h3>Building Blocks</h3>
-                    </div>
-                    <div class="blocks-container">
-                        <div class="block-category">
-                            <div class="category-header">
-                                <span class="category-icon">⚙️</span>
-                                <span class="category-title">Conditions</span>
-                            </div>
-                            <div class="block-items">
-                                <div class="block-item" draggable="true" data-type="condition">
-                                    <span class="block-icon">🔲</span>
-                                    <span class="block-label">Condition</span>
-                                </div>
-                                <div class="block-item" draggable="true" data-type="threshold">
-                                    <span class="block-icon">📊</span>
-                                    <span class="block-label">Threshold</span>
-                                </div>
-                                <div class="block-item" draggable="true" data-type="ratio">
-                                    <span class="block-icon">🔢</span>
-                                    <span class="block-label">Ratio</span>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="block-category">
-                            <div class="category-header">
-                                <span class="category-icon">🔗</span>
-                                <span class="category-title">Logic</span>
-                            </div>
-                            <div class="block-items">
-                                <div class="block-item" draggable="true" data-type="dependency">
-                                    <span class="block-icon">🔗</span>
-                                    <span class="block-label">Dependency</span>
-                                </div>
-                                <div class="block-item" draggable="true" data-type="exception">
-                                    <span class="block-icon">⚠️</span>
-                                    <span class="block-label">Exception</span>
-                                </div>
-                                <div class="block-item" draggable="true" data-type="approval">
-                                    <span class="block-icon">✅</span>
-                                    <span class="block-label">Approval Gate</span>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="block-category">
-                            <div class="category-header">
-                                <span class="category-icon">📄</span>
-                                <span class="category-title">Evidence</span>
-                            </div>
-                            <div class="block-items">
-                                <div class="block-item" draggable="true" data-type="evidence">
-                                    <span class="block-icon">📄</span>
-                                    <span class="block-label">Evidence Ref</span>
-                                </div>
-                                <div class="block-item" draggable="true" data-type="authority">
-                                    <span class="block-icon">👤</span>
-                                    <span class="block-label">Authority</span>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="builder-workspace">
-                    <div class="workspace-header">
-                        <input type="text" id="policyName" class="policy-name-input" placeholder="Enter policy name..." />
-                        <div class="workspace-actions">
-                            <button class="action-btn secondary">Clear</button>
-                            <button class="action-btn primary">Save Policy</button>
-                        </div>
-                    </div>
-                    <div class="workspace-canvas" id="workspaceCanvas">
-                        <div class="workspace-empty">
-                            <div class="empty-icon">🎯</div>
-                            <p class="empty-title">Start Building</p>
-                            <p class="empty-subtitle">Drag building blocks here to construct your policy logic</p>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="builder-properties">
-                    <div class="properties-header">
-                        <h3>Properties</h3>
-                    </div>
-                    <div id="propertiesPanel" class="properties-panel">
-                        <div class="properties-empty">
-                            <span class="empty-icon">⚙️</span>
-                            <p>Select a block to edit properties</p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- Review & Evidence View (7.4) -->
-        <section id="review-view" class="view">
-            <div class="view-hero">
-                <h2 class="view-title">Review & Evidence</h2>
-                <p class="view-subtitle">Inspect provenance, lineage, and evidential support</p>
-            </div>
-            
-            <div class="review-layout">
-                <div class="review-sidebar">
-                    <div class="sidebar-header">
-                        <h3>Knowledge Nodes</h3>
-                        <div class="search-box">
-                            <span class="search-icon">🔍</span>
-                            <input type="text" placeholder="Search nodes..." class="search-input" />
-                        </div>
-                    </div>
-                    <div class="node-list" id="nodeList">
-                        <div class="node-card" data-node="policy-001">
-                            <div class="node-card-header">
-                                <span class="node-badge policy">Policy</span>
-                                <span class="node-status validated">✓ Validated</span>
-                            </div>
-                            <div class="node-card-title">Underwriting Ratio Threshold</div>
-                            <div class="node-card-meta">
-                                <span>📅 2024-01-15</span>
-                                <span>👤 Sarah Chen</span>
-                            </div>
-                        </div>
-                        <div class="node-card" data-node="procedure-002">
-                            <div class="node-card-header">
-                                <span class="node-badge procedure">Procedure</span>
-                                <span class="node-status pending">⏳ Pending</span>
-                            </div>
-                            <div class="node-card-title">Due Diligence Workflow</div>
-                            <div class="node-card-meta">
-                                <span>📅 2023-11-20</span>
-                                <span>👤 Operations</span>
-                            </div>
-                        </div>
-                        <div class="node-card" data-node="precedent-003">
-                            <div class="node-card-header">
-                                <span class="node-badge precedent">Precedent</span>
-                                <span class="node-status validated">✓ Validated</span>
-                            </div>
-                            <div class="node-card-title">Mixed-Use Development Case</div>
-                            <div class="node-card-meta">
-                                <span>📅 2024-02-01</span>
-                                <span>👤 Project Team</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="review-main">
-                    <div class="review-detail" id="reviewDetail">
-                        <div class="detail-header">
-                            <div class="detail-title-section">
-                                <h3 id="detailTitle">Select a node to view details</h3>
-                                <p class="detail-subtitle" id="detailSubtitle">Choose a knowledge node from the sidebar</p>
-                            </div>
-                            <div class="detail-actions">
-                                <button class="detail-btn secondary">Edit</button>
-                                <button class="detail-btn secondary">Request Review</button>
-                                <button class="detail-btn primary">View History</button>
-                            </div>
-                        </div>
-                        
-                        <div class="detail-content">
-                            <div class="detail-section">
-                                <div class="section-header">
-                                    <h4>📄 Evidence References</h4>
-                                </div>
-                                <div id="evidenceList" class="evidence-grid">
-                                    <div class="empty-card">
-                                        <span class="empty-icon">📄</span>
-                                        <p>No evidence references available</p>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <div class="detail-section">
-                                <div class="section-header">
-                                    <h4>🔗 Authorship & Lineage</h4>
-                                </div>
-                                <div id="lineageInfo" class="lineage-grid">
-                                    <div class="empty-card">
-                                        <span class="empty-icon">🔗</span>
-                                        <p>No lineage information available</p>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <div class="detail-section">
-                                <div class="section-header">
-                                    <h4>📜 Version History</h4>
-                                </div>
-                                <div id="versionHistory" class="version-timeline">
-                                    <div class="empty-card">
-                                        <span class="empty-icon">📜</span>
-                                        <p>No version history available</p>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <div class="detail-section">
-                                <div class="section-header">
-                                    <h4>✅ Approval Workflow</h4>
-                                </div>
-                                <div id="approvalWorkflow" class="approval-timeline">
-                                    <div class="empty-card">
-                                        <span class="empty-icon">✅</span>
-                                        <p>No approval workflow available</p>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </section>
-    </main>
+        </footer>
+    </div>
 
     <script src="app.js"></script>
 </body>
