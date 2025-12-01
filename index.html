@@ -17,35 +17,149 @@
             <span class="version">v0.1</span>
         </header>
 
-        <!-- Main Search Interface -->
-        <div class="search-container">
-            <div class="search-bar">
-                <span class="search-icon"></span>
-                <input type="text" id="queryInput" class="search-input" />
-                <button id="querySubmit" class="search-submit">
-                    <span class="submit-icon"></span>
-                </button>
-            </div>
-        </div>
+        <!-- Navigation Tabs -->
+        <nav class="view-nav">
+            <button class="nav-tab active" data-view="query">Query</button>
+            <button class="nav-tab" data-view="graph">Graph</button>
+            <button class="nav-tab" data-view="builder">Builder</button>
+            <button class="nav-tab" data-view="review">Review</button>
+            <div class="nav-spacer"></div>
+            <select id="roleSelector" class="role-selector">
+                <option value="analyst">Analyst</option>
+                <option value="senior">Senior</option>
+                <option value="compliance">Compliance</option>
+                <option value="manager">Manager</option>
+            </select>
+        </nav>
 
-        <!-- Query History -->
-        <div class="content-area">
-            <div class="query-history" id="queryHistory">
-                <div class="query-message bot">
-                    <div class="message-content">
-                        <p class="message-text">Welcome to InternalWiki.com. Ask me about policies, procedures, precedents, or institutional knowledge.</p>
-                        <p class="message-meta">New system ready</p>
-                    </div>
-                    <div class="message-time">Just now</div>
+        <!-- Query View (7.1 Conversational Layer) -->
+        <section id="query-view" class="view active">
+            <div class="search-container">
+                <div class="search-bar">
+                    <span class="search-icon"></span>
+                    <input type="text" id="queryInput" class="search-input" />
+                    <button id="querySubmit" class="search-submit">
+                        <span class="submit-icon"></span>
+                    </button>
                 </div>
             </div>
-        </div>
+
+            <div class="content-area">
+                <div class="query-history" id="queryHistory">
+                    <div class="query-message bot">
+                        <div class="message-content">
+                            <p class="message-text">Welcome to InternalWiki.com. Ask me about policies, procedures, precedents, or institutional knowledge.</p>
+                            <p class="message-meta">New system ready</p>
+                        </div>
+                        <div class="message-time">Just now</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Graph Explorer View (7.2) -->
+        <section id="graph-view" class="view">
+            <div class="graph-header">
+                <h2 class="view-title">Knowledge Graph Explorer</h2>
+                <div class="graph-controls">
+                    <select id="nodeTypeFilter" class="control-select">
+                        <option value="all">All Types</option>
+                        <option value="Policy">Policy</option>
+                        <option value="Procedure">Procedure</option>
+                        <option value="Precedent">Precedent</option>
+                        <option value="Evidence">Evidence</option>
+                    </select>
+                    <button id="zoomIn" class="control-btn">+</button>
+                    <button id="zoomOut" class="control-btn">−</button>
+                    <button id="resetZoom" class="control-btn">Reset</button>
+                </div>
+            </div>
+            <div class="graph-container">
+                <svg id="graphCanvas" class="graph-svg"></svg>
+                <div class="graph-legend">
+                    <div class="legend-item"><span class="legend-dot policy"></span> Policy</div>
+                    <div class="legend-item"><span class="legend-dot procedure"></span> Procedure</div>
+                    <div class="legend-item"><span class="legend-dot precedent"></span> Precedent</div>
+                    <div class="legend-item"><span class="legend-dot evidence"></span> Evidence</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Decision Builder View (7.3) -->
+        <section id="builder-view" class="view">
+            <div class="builder-layout">
+                <div class="builder-sidebar">
+                    <h3 class="sidebar-title">Building Blocks</h3>
+                    <div class="block-category">
+                        <h4 class="category-title">Conditions</h4>
+                        <div class="block-item" draggable="true" data-block="condition">
+                            <span class="block-icon"></span>
+                            <span>Condition</span>
+                        </div>
+                        <div class="block-item" draggable="true" data-block="threshold">
+                            <span class="block-icon"></span>
+                            <span>Threshold</span>
+                        </div>
+                    </div>
+                    <div class="block-category">
+                        <h4 class="category-title">Logic</h4>
+                        <div class="block-item" draggable="true" data-block="rule">
+                            <span class="block-icon"></span>
+                            <span>Rule</span>
+                        </div>
+                        <div class="block-item" draggable="true" data-block="action">
+                            <span class="block-icon"></span>
+                            <span>Action</span>
+                        </div>
+                    </div>
+                    <div class="block-category">
+                        <h4 class="category-title">Evidence</h4>
+                        <div class="block-item" draggable="true" data-block="evidence">
+                            <span class="block-icon"></span>
+                            <span>Evidence Ref</span>
+                        </div>
+                        <div class="block-item" draggable="true" data-block="approval">
+                            <span class="block-icon"></span>
+                            <span>Approval Gate</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="builder-workspace" id="builderWorkspace">
+                    <div class="empty-state">
+                        <p class="empty-text">Drag building blocks here to construct institutional logic</p>
+                    </div>
+                </div>
+                <div class="builder-properties" id="builderProperties">
+                    <h3 class="sidebar-title">Properties</h3>
+                    <div class="empty-state">
+                        <p class="empty-text">Select a block to edit properties</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Review & Evidence View (7.4) -->
+        <section id="review-view" class="view">
+            <div class="review-layout">
+                <div class="review-sidebar">
+                    <h3 class="sidebar-title">Knowledge Nodes</h3>
+                    <div class="node-list" id="nodeList">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+                <div class="review-details" id="reviewDetails">
+                    <div class="empty-state">
+                        <p class="empty-text">Select a node to view details, evidence, and lineage</p>
+                    </div>
+                </div>
+            </div>
+        </section>
 
         <!-- Footer -->
         <footer class="main-footer">
             <div class="footer-stats">
                 <span class="stats-label">Knowledge Nodes</span>
-                <span class="stats-value">0</span>
+                <span class="stats-value" id="nodeCount">0</span>
             </div>
             <div class="footer-links">
                 <a href="#">Terms of Service</a>
