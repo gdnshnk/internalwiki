@@ -1,94 +1,58 @@
 // API Configuration
 const API_BASE_URL = 'http://localhost:3000/api';
 
-const mockNodeDetails = {
-    'policy-001': {
-        title: 'Underwriting Ratio Threshold',
-        type: 'Policy',
-        status: 'Validated',
-        evidence: [
-            { source: 'Regulatory Guidance 2023', section: 'Section 4.2', link: '#' },
-            { source: 'Risk Appetite Framework', section: 'Chapter 3', link: '#' },
-            { source: 'Board Resolution 2023-12', date: '2023-12-15', link: '#' }
-        ],
-        lineage: {
-            author: 'Sarah Chen, Risk Officer',
-            created: '2023-11-01',
-            lastModified: '2024-01-15',
-            modifiedBy: 'Michael Torres, Senior Risk Officer',
-            rationale: 'Updated to reflect new regulatory requirements'
-        },
-        versions: [
-            { version: '2.0', date: '2024-01-15', author: 'Michael Torres', changes: 'Updated thresholds' },
-            { version: '1.0', date: '2023-11-01', author: 'Sarah Chen', changes: 'Initial creation' }
-        ],
-        approvals: [
-            { step: 'Risk Committee Review', status: 'completed', approver: 'Risk Committee', date: '2024-01-10' },
-            { step: 'Board Approval', status: 'completed', approver: 'Board of Directors', date: '2024-01-15' }
-        ]
-    },
-    'procedure-002': {
-        title: 'Due Diligence Workflow',
-        type: 'Procedure',
-        status: 'Pending Review',
-        evidence: [
-            { source: 'SOP Manual v3.2', section: 'Section 7.1', link: '#' }
-        ],
-        lineage: {
-            author: 'Operations Team',
-            created: '2023-08-20',
-            lastModified: '2023-11-20',
-            modifiedBy: 'Operations Team',
-            rationale: 'Streamlined workflow based on feedback'
-        },
-        versions: [
-            { version: '1.2', date: '2023-11-20', author: 'Operations Team', changes: 'Streamlined steps' },
-            { version: '1.0', date: '2023-08-20', author: 'Operations Team', changes: 'Initial creation' }
-        ],
-        approvals: [
-            { step: 'Operations Review', status: 'pending', approver: 'Operations Manager', date: null }
-        ]
-    },
-    'precedent-003': {
-        title: 'Mixed-Use Development Case',
-        type: 'Precedent',
-        status: 'Validated',
-        evidence: [
-            { source: 'Case File MD-2023-045', date: '2023-09-15', link: '#' },
-            { source: 'Legal Opinion', author: 'Legal Counsel', date: '2023-09-20', link: '#' }
-        ],
-        lineage: {
-            author: 'Project Team',
-            created: '2023-09-15',
-            lastModified: '2024-02-01',
-            modifiedBy: 'Project Team',
-            rationale: 'Updated with final outcomes'
-        },
-        versions: [
-            { version: '2.0', date: '2024-02-01', author: 'Project Team', changes: 'Added final outcomes' },
-            { version: '1.0', date: '2023-09-15', author: 'Project Team', changes: 'Initial case documentation' }
-        ],
-        approvals: [
-            { step: 'Legal Review', status: 'completed', approver: 'Legal Counsel', date: '2023-09-20' },
-            { step: 'Executive Approval', status: 'completed', approver: 'CEO', date: '2023-09-25' }
-        ]
-    }
-};
-
 // Application State
 let currentView = 'query';
 let currentRole = 'analyst';
 let selectedNode = null;
+let graphData = null;
+let graphZoom = 1;
+let graphOffset = { x: 0, y: 0 };
 
 // Initialize Application
 document.addEventListener('DOMContentLoaded', () => {
+    initializeNavigation();
     initializeQueryInterface();
+    initializeGraphExplorer();
+    initializeDecisionBuilder();
+    initializeReviewView();
+    initializeRoleSelector();
+    loadNodeCount();
 });
 
-// Simplified - no navigation needed for Grokipedia-style design
+// Navigation
+function initializeNavigation() {
+    const navTabs = document.querySelectorAll('.nav-tab');
+    navTabs.forEach(tab => {
+        tab.addEventListener('click', () => {
+            const view = tab.dataset.view;
+            switchView(view);
+        });
+    });
+}
 
-// Query Interface
+function switchView(viewName) {
+    // Update active tab
+    document.querySelectorAll('.nav-tab').forEach(tab => {
+        tab.classList.toggle('active', tab.dataset.view === viewName);
+    });
+    
+    // Update active view
+    document.querySelectorAll('.view').forEach(view => {
+        view.classList.toggle('active', view.id === `${viewName}-view`);
+    });
+    
+    currentView = viewName;
+    
+    // Load view-specific data
+    if (viewName === 'graph') {
+        loadGraphData();
+    } else if (viewName === 'review') {
+        loadNodeList();
+    }
+}
 
+// Query Interface (7.1)
 function initializeQueryInterface() {
     const queryInput = document.getElementById('queryInput');
     const querySubmit = document.getElementById('querySubmit');
@@ -107,12 +71,10 @@ async function handleQuery() {
     
     if (!query) return;
     
-    // Add user message
     addQueryMessage('user', query);
     queryInput.value = '';
     
     try {
-        // Call backend API
         const response = await fetch(`${API_BASE_URL}/query`, {
             method: 'POST',
             headers: {
@@ -120,7 +82,7 @@ async function handleQuery() {
             },
             body: JSON.stringify({
                 query: query,
-                role: 'analyst' // Default role, can be made dynamic
+                role: currentRole
             })
         });
         
@@ -137,14 +99,11 @@ async function handleQuery() {
     }
 }
 
-// handleQuery moved above - now calls backend API
-
 function addQueryMessage(type, text, structuredResponse = null) {
     const history = document.getElementById('queryHistory');
     const messageDiv = document.createElement('div');
     messageDiv.className = `query-message ${type}`;
     
-    const now = new Date();
     const timeStr = 'Just now';
     
     if (type === 'user') {
@@ -158,29 +117,30 @@ function addQueryMessage(type, text, structuredResponse = null) {
         let content = '';
         
         if (structuredResponse && structuredResponse.structured) {
-            content = `
-                <p class="message-text">${text}</p>
-                <div class="structured-output">
-                    <h4>Structured Institutional Logic</h4>
-                    ${Object.entries(structuredResponse.content).map(([key, value]) => {
-                        const label = key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
-                        return `
-                            <div class="structured-item">
-                                <strong>${label}:</strong>
-                                <span>${Array.isArray(value) ? value.join(', ') : value}</span>
-                            </div>
-                        `;
-                    }).join('')}
-                </div>
-            `;
+            const contentObj = structuredResponse.content;
+            if (contentObj.error) {
+                content = `<p class="message-text">${contentObj.error}</p>`;
+            } else {
+                content = `<p class="message-text">Here is the relevant institutional logic:</p>`;
+                content += '<div class="structured-output">';
+                
+                for (const [key, value] of Object.entries(contentObj)) {
+                    if (Array.isArray(value)) {
+                        content += `<div class="structured-item"><strong>${key}</strong><span>${value.join(', ')}</span></div>`;
+                    } else {
+                        content += `<div class="structured-item"><strong>${key}</strong><span>${value}</span></div>`;
+                    }
+                }
+                
+                content += '</div>';
+            }
         } else {
-            content = `<p class="message-text">${structuredResponse?.text || 'I understand your query. Here is the relevant institutional logic...'}</p>`;
+            content = `<p class="message-text">${text || 'I understand your query.'}</p>`;
         }
         
         messageDiv.innerHTML = `
             <div class="message-content">
                 ${content}
-                <p class="message-meta">Response generated</p>
             </div>
             <div class="message-time">${timeStr}</div>
         `;
@@ -190,7 +150,302 @@ function addQueryMessage(type, text, structuredResponse = null) {
     history.scrollTop = history.scrollHeight;
 }
 
-// Query generation now handled by backend API
+// Graph Explorer (7.2)
+function initializeGraphExplorer() {
+    document.getElementById('nodeTypeFilter').addEventListener('change', (e) => {
+        if (graphData) {
+            renderGraph(graphData, e.target.value);
+        }
+    });
+    
+    document.getElementById('zoomIn').addEventListener('click', () => {
+        graphZoom = Math.min(graphZoom * 1.2, 3);
+        if (graphData) renderGraph(graphData);
+    });
+    
+    document.getElementById('zoomOut').addEventListener('click', () => {
+        graphZoom = Math.max(graphZoom / 1.2, 0.3);
+        if (graphData) renderGraph(graphData);
+    });
+    
+    document.getElementById('resetZoom').addEventListener('click', () => {
+        graphZoom = 1;
+        graphOffset = { x: 0, y: 0 };
+        if (graphData) renderGraph(graphData);
+    });
+}
 
-// Removed complex views - keeping only query interface for Grokipedia-style design
+async function loadGraphData() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/graph`);
+        const data = await response.json();
+        graphData = data;
+        renderGraph(data);
+    } catch (error) {
+        console.error('Failed to load graph:', error);
+    }
+}
 
+function renderGraph(data, filterType = 'all') {
+    const svg = document.getElementById('graphCanvas');
+    svg.innerHTML = '';
+    
+    const width = svg.clientWidth || 800;
+    const height = svg.clientHeight || 500;
+    
+    // Filter nodes
+    const nodes = filterType === 'all' 
+        ? data.nodes 
+        : data.nodes.filter(n => n.type === filterType);
+    
+    // Filter edges to only include filtered nodes
+    const nodeIds = new Set(nodes.map(n => n.id));
+    const edges = data.edges.filter(e => 
+        nodeIds.has(e.source) && nodeIds.has(e.target)
+    );
+    
+    // Simple force-directed layout
+    const positions = {};
+    const centerX = width / 2;
+    const centerY = height / 2;
+    const radius = Math.min(width, height) / 3;
+    
+    nodes.forEach((node, i) => {
+        const angle = (2 * Math.PI * i) / nodes.length;
+        positions[node.id] = {
+            x: centerX + radius * Math.cos(angle) * graphZoom + graphOffset.x,
+            y: centerY + radius * Math.sin(angle) * graphZoom + graphOffset.y
+        };
+    });
+    
+    // Draw edges
+    edges.forEach(edge => {
+        const source = positions[edge.source];
+        const target = positions[edge.target];
+        if (source && target) {
+            const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            line.setAttribute('x1', source.x);
+            line.setAttribute('y1', source.y);
+            line.setAttribute('x2', target.x);
+            line.setAttribute('y2', target.y);
+            line.setAttribute('class', 'graph-edge');
+            svg.appendChild(line);
+        }
+    });
+    
+    // Draw nodes
+    nodes.forEach(node => {
+        const pos = positions[node.id];
+        if (pos) {
+            const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            circle.setAttribute('cx', pos.x);
+            circle.setAttribute('cy', pos.y);
+            circle.setAttribute('r', 20);
+            circle.setAttribute('class', 'graph-node');
+            circle.setAttribute('fill', getNodeColor(node.type));
+            circle.setAttribute('data-node-id', node.id);
+            
+            circle.addEventListener('click', () => {
+                selectedNode = node;
+                switchView('review');
+                loadNodeDetails(node.id);
+            });
+            
+            svg.appendChild(circle);
+            
+            // Add label
+            const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+            text.setAttribute('x', pos.x);
+            text.setAttribute('y', pos.y + 35);
+            text.setAttribute('text-anchor', 'middle');
+            text.setAttribute('font-size', '12px');
+            text.setAttribute('fill', 'var(--text-primary)');
+            text.textContent = node.label.substring(0, 15);
+            svg.appendChild(text);
+        }
+    });
+}
+
+function getNodeColor(type) {
+    const colors = {
+        'Policy': '#4a90e2',
+        'Procedure': '#50c878',
+        'Precedent': '#f5a623',
+        'Evidence': '#9012fe'
+    };
+    return colors[type] || '#666666';
+}
+
+// Decision Builder (7.3)
+function initializeDecisionBuilder() {
+    const blocks = document.querySelectorAll('.block-item');
+    const workspace = document.getElementById('builderWorkspace');
+    
+    blocks.forEach(block => {
+        block.addEventListener('dragstart', (e) => {
+            e.dataTransfer.setData('block-type', block.dataset.block);
+        });
+    });
+    
+    workspace.addEventListener('dragover', (e) => {
+        e.preventDefault();
+    });
+    
+    workspace.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const blockType = e.dataTransfer.getData('block-type');
+        if (blockType) {
+            addBlockToWorkspace(blockType, e.offsetX, e.offsetY);
+        }
+    });
+}
+
+function addBlockToWorkspace(type, x, y) {
+    const workspace = document.getElementById('builderWorkspace');
+    const emptyState = workspace.querySelector('.empty-state');
+    if (emptyState) {
+        emptyState.remove();
+    }
+    
+    const block = document.createElement('div');
+    block.className = 'block-item';
+    block.style.position = 'absolute';
+    block.style.left = `${x}px`;
+    block.style.top = `${y}px`;
+    block.style.cursor = 'move';
+    block.textContent = type.charAt(0).toUpperCase() + type.slice(1);
+    block.dataset.block = type;
+    
+    block.addEventListener('click', () => {
+        showBlockProperties(type);
+    });
+    
+    workspace.appendChild(block);
+}
+
+function showBlockProperties(type) {
+    const properties = document.getElementById('builderProperties');
+    const emptyState = properties.querySelector('.empty-state');
+    if (emptyState) {
+        emptyState.remove();
+    }
+    
+    properties.innerHTML = `
+        <h3 class="sidebar-title">Properties</h3>
+        <div class="detail-section">
+            <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem;">Block Type</label>
+            <input type="text" value="${type}" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 4px;" readonly>
+        </div>
+        <div class="detail-section">
+            <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem;">Description</label>
+            <textarea style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 4px; min-height: 100px;"></textarea>
+        </div>
+    `;
+}
+
+// Review & Evidence View (7.4)
+function initializeReviewView() {
+    // Node selection handled in loadNodeList
+}
+
+async function loadNodeList() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/nodes`);
+        const data = await response.json();
+        const nodeList = document.getElementById('nodeList');
+        nodeList.innerHTML = '';
+        
+        data.nodes.forEach(node => {
+            const item = document.createElement('div');
+            item.className = 'node-list-item';
+            item.innerHTML = `
+                <div class="node-list-item-title">${node.label}</div>
+                <div class="node-list-item-meta">${node.type} • ${node.metadata.validationState}</div>
+            `;
+            item.addEventListener('click', () => {
+                document.querySelectorAll('.node-list-item').forEach(i => i.classList.remove('active'));
+                item.classList.add('active');
+                loadNodeDetails(node.id);
+            });
+            nodeList.appendChild(item);
+        });
+    } catch (error) {
+        console.error('Failed to load nodes:', error);
+    }
+}
+
+async function loadNodeDetails(nodeId) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/nodes/${nodeId}`);
+        const node = await response.json();
+        
+        const details = document.getElementById('reviewDetails');
+        details.innerHTML = `
+            <div class="detail-section">
+                <h2 class="view-title">${node.label}</h2>
+                <p class="detail-content">${node.description || 'No description available'}</p>
+            </div>
+            
+            <div class="detail-section">
+                <h3 class="detail-section-title">Metadata</h3>
+                <div class="detail-content">
+                    <p><strong>Type:</strong> ${node.type}</p>
+                    <p><strong>Author:</strong> ${node.metadata.author}</p>
+                    <p><strong>Created:</strong> ${new Date(node.metadata.createdAt).toLocaleDateString()}</p>
+                    <p><strong>Last Modified:</strong> ${new Date(node.metadata.lastModified).toLocaleDateString()}</p>
+                    <p><strong>Version:</strong> ${node.metadata.version}</p>
+                    <p><strong>Status:</strong> ${node.metadata.validationState}</p>
+                </div>
+            </div>
+            
+            <div class="detail-section">
+                <h3 class="detail-section-title">Evidence References</h3>
+                <div class="evidence-list">
+                    ${node.metadata.evidenceReferences.length > 0 
+                        ? node.metadata.evidenceReferences.map(ref => `
+                            <div class="evidence-item">
+                                <div class="evidence-item-source">${ref}</div>
+                                <div class="evidence-item-meta">Evidence reference</div>
+                            </div>
+                        `).join('')
+                        : '<p class="detail-content">No evidence references</p>'
+                    }
+                </div>
+            </div>
+            
+            <div class="detail-section">
+                <h3 class="detail-section-title">Lineage</h3>
+                <div class="detail-content">
+                    <p><strong>Author:</strong> ${node.metadata.author}</p>
+                    ${node.metadata.modifiedBy ? `<p><strong>Last Modified By:</strong> ${node.metadata.modifiedBy}</p>` : ''}
+                    ${node.metadata.jurisdiction ? `<p><strong>Jurisdiction:</strong> ${node.metadata.jurisdiction}</p>` : ''}
+                </div>
+            </div>
+        `;
+    } catch (error) {
+        console.error('Failed to load node details:', error);
+    }
+}
+
+// Role-Adaptive Navigation (7.5)
+function initializeRoleSelector() {
+    const roleSelector = document.getElementById('roleSelector');
+    roleSelector.addEventListener('change', (e) => {
+        currentRole = e.target.value;
+        // Role changes can trigger view updates
+        if (currentView === 'query') {
+            // Re-query with new role if needed
+        }
+    });
+}
+
+// Load node count for footer
+async function loadNodeCount() {
+    try {
+        const response = await fetch(`${API_BASE_URL}/nodes`);
+        const data = await response.json();
+        document.getElementById('nodeCount').textContent = data.nodes.length;
+    } catch (error) {
+        console.error('Failed to load node count:', error);
+    }
+}
