@@ -191,12 +191,21 @@ function renderGraph(data, filterType = 'all') {
     svg.innerHTML = '';
     
     const width = svg.clientWidth || 800;
-    const height = svg.clientHeight || 500;
+    const height = svg.clientHeight || 600;
     
     // Filter nodes
     const nodes = filterType === 'all' 
         ? data.nodes 
         : data.nodes.filter(n => n.type === filterType);
+    
+    if (nodes.length === 0) {
+        svg.innerHTML = `
+            <text x="${width/2}" y="${height/2}" text-anchor="middle" fill="var(--text-tertiary)" font-size="14px">
+                No nodes to display
+            </text>
+        `;
+        return;
+    }
     
     // Filter edges to only include filtered nodes
     const nodeIds = new Set(nodes.map(n => n.id));
@@ -204,11 +213,11 @@ function renderGraph(data, filterType = 'all') {
         nodeIds.has(e.source) && nodeIds.has(e.target)
     );
     
-    // Simple force-directed layout
+    // Improved force-directed layout with better spacing
     const positions = {};
     const centerX = width / 2;
     const centerY = height / 2;
-    const radius = Math.min(width, height) / 3;
+    const radius = Math.min(width, height) / 3.5;
     
     nodes.forEach((node, i) => {
         const angle = (2 * Math.PI * i) / nodes.length;
@@ -218,7 +227,7 @@ function renderGraph(data, filterType = 'all') {
         };
     });
     
-    // Draw edges
+    // Draw edges with better styling
     edges.forEach(edge => {
         const source = positions[edge.source];
         const target = positions[edge.target];
@@ -229,20 +238,33 @@ function renderGraph(data, filterType = 'all') {
             line.setAttribute('x2', target.x);
             line.setAttribute('y2', target.y);
             line.setAttribute('class', 'graph-edge');
+            line.setAttribute('stroke-dasharray', edge.type === 'depends_on' ? '4,4' : 'none');
             svg.appendChild(line);
         }
     });
     
-    // Draw nodes
+    // Draw nodes with better visual design
     nodes.forEach(node => {
         const pos = positions[node.id];
         if (pos) {
+            // Outer glow circle
+            const glow = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+            glow.setAttribute('cx', pos.x);
+            glow.setAttribute('cy', pos.y);
+            glow.setAttribute('r', 26);
+            glow.setAttribute('fill', getNodeColor(node.type));
+            glow.setAttribute('opacity', '0.1');
+            svg.appendChild(glow);
+            
+            // Main node circle
             const circle = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
             circle.setAttribute('cx', pos.x);
             circle.setAttribute('cy', pos.y);
-            circle.setAttribute('r', 20);
+            circle.setAttribute('r', 22);
             circle.setAttribute('class', 'graph-node');
             circle.setAttribute('fill', getNodeColor(node.type));
+            circle.setAttribute('stroke', '#ffffff');
+            circle.setAttribute('stroke-width', '2');
             circle.setAttribute('data-node-id', node.id);
             
             circle.addEventListener('click', () => {
@@ -251,16 +273,37 @@ function renderGraph(data, filterType = 'all') {
                 loadNodeDetails(node.id);
             });
             
+            circle.addEventListener('mouseenter', () => {
+                circle.setAttribute('r', '26');
+            });
+            
+            circle.addEventListener('mouseleave', () => {
+                circle.setAttribute('r', '22');
+            });
+            
             svg.appendChild(circle);
             
-            // Add label
+            // Add label with background
+            const labelBg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            const labelText = node.label.substring(0, 20);
+            labelBg.setAttribute('x', pos.x - 40);
+            labelBg.setAttribute('y', pos.y + 32);
+            labelBg.setAttribute('width', 80);
+            labelBg.setAttribute('height', 18);
+            labelBg.setAttribute('rx', 4);
+            labelBg.setAttribute('fill', 'rgba(255, 255, 255, 0.95)');
+            labelBg.setAttribute('stroke', 'var(--border-color)');
+            labelBg.setAttribute('stroke-width', '1');
+            svg.appendChild(labelBg);
+            
             const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
             text.setAttribute('x', pos.x);
-            text.setAttribute('y', pos.y + 35);
+            text.setAttribute('y', pos.y + 44);
             text.setAttribute('text-anchor', 'middle');
-            text.setAttribute('font-size', '12px');
+            text.setAttribute('font-size', '11px');
             text.setAttribute('fill', 'var(--text-primary)');
-            text.textContent = node.label.substring(0, 15);
+            text.setAttribute('font-weight', '500');
+            text.textContent = labelText;
             svg.appendChild(text);
         }
     });
@@ -289,13 +332,20 @@ function initializeDecisionBuilder() {
     
     workspace.addEventListener('dragover', (e) => {
         e.preventDefault();
+        workspace.classList.add('drag-over');
+    });
+    
+    workspace.addEventListener('dragleave', () => {
+        workspace.classList.remove('drag-over');
     });
     
     workspace.addEventListener('drop', (e) => {
         e.preventDefault();
+        workspace.classList.remove('drag-over');
         const blockType = e.dataTransfer.getData('block-type');
         if (blockType) {
-            addBlockToWorkspace(blockType, e.offsetX, e.offsetY);
+            const rect = workspace.getBoundingClientRect();
+            addBlockToWorkspace(blockType, e.clientX - rect.left, e.clientY - rect.top);
         }
     });
 }
@@ -307,20 +357,36 @@ function addBlockToWorkspace(type, x, y) {
         emptyState.remove();
     }
     
+    workspace.classList.remove('drag-over');
+    
     const block = document.createElement('div');
     block.className = 'block-item';
     block.style.position = 'absolute';
-    block.style.left = `${x}px`;
-    block.style.top = `${y}px`;
+    block.style.left = `${x - 50}px`;
+    block.style.top = `${y - 20}px`;
     block.style.cursor = 'move';
-    block.textContent = type.charAt(0).toUpperCase() + type.slice(1);
+    block.style.width = 'auto';
+    block.style.minWidth = '120px';
+    block.innerHTML = `
+        <span class="block-icon"></span>
+        <span>${type.charAt(0).toUpperCase() + type.slice(1)}</span>
+    `;
     block.dataset.block = type;
     
     block.addEventListener('click', () => {
         showBlockProperties(type);
     });
     
+    // Add animation
+    block.style.opacity = '0';
+    block.style.transform = 'scale(0.8)';
     workspace.appendChild(block);
+    
+    setTimeout(() => {
+        block.style.transition = 'all 0.3s ease';
+        block.style.opacity = '1';
+        block.style.transform = 'scale(1)';
+    }, 10);
 }
 
 function showBlockProperties(type) {
@@ -332,13 +398,17 @@ function showBlockProperties(type) {
     
     properties.innerHTML = `
         <h3 class="sidebar-title">Properties</h3>
-        <div class="detail-section">
-            <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem;">Block Type</label>
-            <input type="text" value="${type}" style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 4px;" readonly>
+        <div class="detail-section" style="margin-bottom: var(--spacing-md); padding-bottom: var(--spacing-md); border-bottom: 1px solid var(--border-color);">
+            <label style="display: block; margin-bottom: var(--spacing-sm); font-size: 0.8125rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">Block Type</label>
+            <input type="text" value="${type.charAt(0).toUpperCase() + type.slice(1)}" style="width: 100%; padding: var(--spacing-sm); border: 1px solid var(--border-color); border-radius: 6px; font-family: var(--font-body); font-size: 0.875rem; background: var(--bg-primary); color: var(--text-primary);" readonly>
+        </div>
+        <div class="detail-section" style="margin-bottom: var(--spacing-md);">
+            <label style="display: block; margin-bottom: var(--spacing-sm); font-size: 0.8125rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">Description</label>
+            <textarea style="width: 100%; padding: var(--spacing-sm); border: 1px solid var(--border-color); border-radius: 6px; min-height: 120px; font-family: var(--font-body); font-size: 0.875rem; background: var(--bg-primary); color: var(--text-primary); resize: vertical;" placeholder="Enter block description..."></textarea>
         </div>
         <div class="detail-section">
-            <label style="display: block; margin-bottom: 0.5rem; font-size: 0.875rem;">Description</label>
-            <textarea style="width: 100%; padding: 0.5rem; border: 1px solid var(--border-color); border-radius: 4px; min-height: 100px;"></textarea>
+            <label style="display: block; margin-bottom: var(--spacing-sm); font-size: 0.8125rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.5px;">Configuration</label>
+            <input type="text" style="width: 100%; padding: var(--spacing-sm); border: 1px solid var(--border-color); border-radius: 6px; font-family: var(--font-body); font-size: 0.875rem; background: var(--bg-primary); color: var(--text-primary);" placeholder="Configure parameters...">
         </div>
     `;
 }
