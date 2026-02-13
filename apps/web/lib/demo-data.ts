@@ -1,20 +1,23 @@
 import type { Citation, DocumentChunk, DocumentRecord, EvidenceItem, EvidenceReason } from "@internalwiki/core";
 import { computeSourceScore } from "@internalwiki/core";
 import {
-  getDocumentById as getDocumentByIdRepo,
   hashEmbedding,
-  listDocuments as listDocumentsRepo,
   searchDocumentChunksHybrid,
   toDocumentChunk,
   vectorToSqlLiteral
 } from "@internalwiki/db";
+import {
+  getDocumentById as getDocumentByIdCached,
+  listDocuments as listDocumentsCached,
+  searchDocumentChunksHybrid as searchDocumentChunksHybridCached
+} from "@internalwiki/db/cached-repositories";
 
 export async function listDocuments(orgId: string): Promise<DocumentRecord[]> {
-  return listDocumentsRepo(orgId);
+  return listDocumentsCached(orgId);
 }
 
 export async function getDocumentById(orgId: string, docId: string): Promise<DocumentRecord | null> {
-  return getDocumentByIdRepo(orgId, docId);
+  return getDocumentByIdCached(orgId, docId);
 }
 
 export async function getChunkCandidates(params: {
@@ -22,16 +25,24 @@ export async function getChunkCandidates(params: {
   question: string;
   sourceType?: "google_docs" | "google_drive" | "notion";
   queryEmbedding?: number[];
+  dateRange?: { from?: string; to?: string };
+  author?: string;
+  minSourceScore?: number;
+  documentIds?: string[];
 }): Promise<DocumentChunk[]> {
   const embedding = params.queryEmbedding ?? hashEmbedding(params.question);
   const queryVector = vectorToSqlLiteral(embedding);
 
-  const records = await searchDocumentChunksHybrid({
+  const records = await searchDocumentChunksHybridCached({
     organizationId: params.organizationId,
     queryText: params.question,
     queryVector,
     sourceType: params.sourceType,
-    limit: 8
+    limit: 8,
+    dateRange: params.dateRange,
+    author: params.author,
+    minSourceScore: params.minSourceScore,
+    documentIds: params.documentIds
   });
 
   const chunks = toDocumentChunk(records);

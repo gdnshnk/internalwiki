@@ -1737,6 +1737,15 @@ export async function upsertExternalItemAndDocuments(input: {
 
     await client.query("COMMIT");
 
+    // Invalidate cache if document was changed
+    if (!unchanged) {
+      const { invalidateDocumentCache } = await import("./cached-repositories");
+      await invalidateDocumentCache(input.organizationId, documentId).catch((error) => {
+        // Don't fail the transaction if cache invalidation fails
+        console.error("[Cache] Failed to invalidate cache:", error);
+      });
+    }
+
     return {
       changed: !unchanged,
       documentId,
@@ -1756,10 +1765,60 @@ export async function searchDocumentChunksHybrid(params: {
   queryVector: string;
   sourceType?: ConnectorType;
   limit?: number;
+  dateRange?: { from?: string; to?: string };
+  author?: string;
+  minSourceScore?: number;
+  documentIds?: string[];
 }): Promise<ChunkSearchRecord[]> {
   const limit = params.limit ?? 8;
+  // Reduced retrieval pool: 30 instead of 60 for better performance with HNSW index
   const retrievalPool = Math.max(30, limit * 4);
-  const k = 60;
+  const k = 30; // Reduced from 60 for optimized vector search
+
+  // Build WHERE clause conditions for filters
+  const conditions: string[] = ["d.organization_id = $1"];
+  const queryParams: unknown[] = [params.organizationId];
+  let paramIndex = 2;
+
+  if (params.sourceType) {
+    conditions.push(`d.source_type = $${paramIndex}`);
+    queryParams.push(params.sourceType);
+    paramIndex += 1;
+  }
+
+  if (params.dateRange?.from) {
+    conditions.push(`COALESCE(dv.source_last_updated_at, d.updated_at) >= $${paramIndex}`);
+    queryParams.push(params.dateRange.from);
+    paramIndex += 1;
+  }
+
+  if (params.dateRange?.to) {
+    conditions.push(`COALESCE(dv.source_last_updated_at, d.updated_at) <= $${paramIndex}`);
+    queryParams.push(params.dateRange.to);
+    paramIndex += 1;
+  }
+
+  if (params.author) {
+    conditions.push(`d.owner_identity ILIKE $${paramIndex}`);
+    queryParams.push(`%${params.author}%`);
+    paramIndex += 1;
+  }
+
+  if (params.minSourceScore !== undefined) {
+    conditions.push(`COALESCE(ss.total_score, 50) >= $${paramIndex}`);
+    queryParams.push(params.minSourceScore);
+    paramIndex += 1;
+  }
+
+  if (params.documentIds && params.documentIds.length > 0) {
+    conditions.push(`d.id = ANY($${paramIndex}::text[])`);
+    queryParams.push(params.documentIds);
+    paramIndex += 1;
+  }
+
+  const whereClause = conditions.join(" AND ");
+  const vectorQueryParamIndex = paramIndex;
+  const limitParamIndex = paramIndex + 1;
 
   const vectorRows = await query<DbChunkSearchRow>(
     `
@@ -1780,7 +1839,7 @@ export async function searchDocumentChunksHybrid(params: {
         dv.source_checksum,
         dv.connector_sync_run_id,
         d.source_type AS connector_type,
-        ce.embedding <=> $3::vector AS vector_distance,
+        ce.embedding <=> $${vectorQueryParamIndex}::vector AS vector_distance,
         NULL::double precision AS lexical_score
       FROM document_chunks dc
       JOIN document_versions dv
@@ -1795,13 +1854,15 @@ export async function searchDocumentChunksHybrid(params: {
       JOIN chunk_embeddings ce
         ON ce.chunk_id = dc.id
         AND ce.organization_id = dc.organization_id
-      WHERE d.organization_id = $1
-        AND ($2::text IS NULL OR d.source_type = $2)
-      ORDER BY ce.embedding <=> $3::vector ASC
-      LIMIT $4
+      WHERE ${whereClause}
+      ORDER BY ce.embedding <=> $${vectorQueryParamIndex}::vector ASC
+      LIMIT $${limitParamIndex}
     `,
-    [params.organizationId, params.sourceType ?? null, params.queryVector, retrievalPool]
+    [...queryParams, params.queryVector, retrievalPool]
   );
+
+  const lexicalQueryParamIndex = paramIndex;
+  const lexicalLimitParamIndex = paramIndex + 1;
 
   const lexicalRows = await query<DbChunkSearchRow>(
     `
@@ -1823,7 +1884,7 @@ export async function searchDocumentChunksHybrid(params: {
         dv.connector_sync_run_id,
         d.source_type AS connector_type,
         NULL::double precision AS vector_distance,
-        ts_rank_cd(to_tsvector('english', dc.text_content), plainto_tsquery('english', $3)) AS lexical_score
+        ts_rank_cd(to_tsvector('english', dc.text_content), plainto_tsquery('english', $${lexicalQueryParamIndex})) AS lexical_score
       FROM document_chunks dc
       JOIN document_versions dv
         ON dv.id = dc.document_version_id
@@ -1834,13 +1895,12 @@ export async function searchDocumentChunksHybrid(params: {
       LEFT JOIN source_scores ss
         ON ss.organization_id = d.organization_id
         AND ss.document_version_id = dv.id
-      WHERE d.organization_id = $1
-        AND ($2::text IS NULL OR d.source_type = $2)
-        AND to_tsvector('english', dc.text_content) @@ plainto_tsquery('english', $3)
+      WHERE ${whereClause}
+        AND to_tsvector('english', dc.text_content) @@ plainto_tsquery('english', $${lexicalQueryParamIndex})
       ORDER BY lexical_score DESC
-      LIMIT $4
+      LIMIT $${lexicalLimitParamIndex}
     `,
-    [params.organizationId, params.sourceType ?? null, params.queryText, retrievalPool]
+    [...queryParams, params.queryText, retrievalPool]
   );
 
   const merged = new Map<
@@ -2255,6 +2315,24 @@ export async function getLatestDocumentVersionMetadata(
           connectorSyncRunId: rows[0].connector_sync_run_id ?? undefined
         }
     : null;
+}
+
+export async function getDocumentVersionContent(
+  organizationId: string,
+  documentVersionId: string
+): Promise<{ content: string } | null> {
+  const rows = await query<{ content_markdown: string }>(
+    `
+      SELECT content_markdown
+      FROM document_versions
+      WHERE organization_id = $1
+        AND id = $2
+      LIMIT 1
+    `,
+    [organizationId, documentVersionId]
+  );
+
+  return rows[0] ? { content: rows[0].content_markdown } : null;
 }
 
 export async function listDocumentVersionTimeline(

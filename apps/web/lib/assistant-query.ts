@@ -1,5 +1,12 @@
 import { z } from "zod";
-import type { AnswerClaim, AssistantQueryRequest, AssistantQueryResponse, Citation } from "@internalwiki/core";
+import type {
+  AnswerClaim,
+  AssistantQueryRequest,
+  AssistantQueryResponse,
+  Citation,
+  ExpandedQuery
+} from "@internalwiki/core";
+import { expandQuery, generateQueryVariations } from "@internalwiki/core";
 import { persistAnswerClaims, persistGroundedAnswer } from "@internalwiki/db";
 import { embedQueryText, getAiProvider } from "@/lib/ai";
 import { buildEvidenceItems, getChunkCandidates } from "@/lib/demo-data";
@@ -10,7 +17,16 @@ export const assistantQuerySchema = z.object({
   threadId: z.string().min(8).optional(),
   filters: z
     .object({
-      sourceType: z.enum(["google_docs", "google_drive", "notion"]).optional()
+      sourceType: z.enum(["google_docs", "google_drive", "notion"]).optional(),
+      dateRange: z
+        .object({
+          from: z.string().optional(),
+          to: z.string().optional()
+        })
+        .optional(),
+      author: z.string().optional(),
+      minSourceScore: z.number().min(0).max(100).optional(),
+      documentIds: z.array(z.string()).optional()
     })
     .optional()
 });
@@ -227,24 +243,79 @@ export async function runAssistantQuery(params: {
   actorId?: string;
 }): Promise<AssistantQueryResponse> {
   const retrievalStart = performance.now();
-  const queryEmbedding = await embedQueryText(params.input.query);
+  const provider = getAiProvider();
 
+  // Expand query for better retrieval
+  let expandedQuery: ExpandedQuery;
+  try {
+    expandedQuery = await expandQuery(params.input.query, provider);
+  } catch (error) {
+    // Fallback to simple variations if AI expansion fails
+    console.warn("[AssistantQuery] Query expansion failed, using simple variations:", error);
+    expandedQuery = {
+      original: params.input.query,
+      variations: generateQueryVariations(params.input.query),
+      intent: "factual"
+    };
+  }
+
+  // Use the original query for embedding, but search with variations
+  const queryEmbedding = await embedQueryText(expandedQuery.original);
+
+  // Get candidates using the original query
   const candidates = await getChunkCandidates({
     organizationId: params.organizationId,
-    question: params.input.query,
+    question: expandedQuery.original,
     sourceType: params.input.filters?.sourceType,
-    queryEmbedding
+    queryEmbedding,
+    dateRange: params.input.filters?.dateRange,
+    author: params.input.filters?.author,
+    minSourceScore: params.input.filters?.minSourceScore,
+    documentIds: params.input.filters?.documentIds
   });
 
-  const sources = buildEvidenceItems(candidates);
+  // If we have variations and not enough candidates, try searching with variations
+  let allCandidates = candidates;
+  if (expandedQuery.variations.length > 1 && candidates.length < 5) {
+    const variationCandidates = await Promise.all(
+      expandedQuery.variations.slice(1, 4).map(async (variation) => {
+        const variationEmbedding = await embedQueryText(variation);
+        return getChunkCandidates({
+          organizationId: params.organizationId,
+          question: variation,
+          sourceType: params.input.filters?.sourceType,
+          queryEmbedding: variationEmbedding,
+          dateRange: params.input.filters?.dateRange,
+          author: params.input.filters?.author,
+          minSourceScore: params.input.filters?.minSourceScore,
+          documentIds: params.input.filters?.documentIds
+        });
+      })
+    );
+
+    // Merge and deduplicate candidates
+    const candidateMap = new Map<string, typeof candidates[0]>();
+    for (const candidate of candidates) {
+      candidateMap.set(candidate.chunkId, candidate);
+    }
+    for (const variationSet of variationCandidates) {
+      for (const candidate of variationSet) {
+        if (!candidateMap.has(candidate.chunkId)) {
+          candidateMap.set(candidate.chunkId, candidate);
+        }
+      }
+    }
+    allCandidates = Array.from(candidateMap.values()).slice(0, 8);
+  }
+
+  const sources = buildEvidenceItems(allCandidates);
   const retrievalScore = computeRetrievalScore(sources);
   const retrievalMs = Math.round(performance.now() - retrievalStart);
 
-  const provider = getAiProvider();
   const generationStart = performance.now();
   const preparedQuestion = augmentQuestionForMode(params.input);
   const contextChunks = capContextChunks(
-    candidates.map((chunk) => ({
+    allCandidates.map((chunk) => ({
       chunkId: chunk.chunkId,
       docVersionId: chunk.docVersionId,
       sourceUrl: chunk.sourceUrl,
@@ -261,7 +332,7 @@ export async function runAssistantQuery(params: {
 
   const chunkTextById = new Map<string, string>();
   const chunkSourceScore = new Map<string, number>();
-  for (const chunk of candidates) {
+  for (const chunk of allCandidates) {
     chunkTextById.set(chunk.chunkId, chunk.text);
     chunkSourceScore.set(chunk.chunkId, chunk.sourceScore);
   }

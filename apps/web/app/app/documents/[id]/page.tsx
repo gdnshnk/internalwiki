@@ -4,8 +4,10 @@ import { getSessionContextOptional } from "@/lib/session";
 import {
   getLatestDocumentVersionMetadata,
   getSummaryCitationsByDocumentVersion,
-  listDocumentVersionTimeline
+  listDocumentVersionTimeline,
+  getDocumentVersionContent
 } from "@internalwiki/db";
+import { DocumentViewer } from "@/components/document-viewer";
 
 export default async function DocumentPage({
   params
@@ -24,6 +26,9 @@ export default async function DocumentPage({
   const citations = latestVersion
     ? await getSummaryCitationsByDocumentVersion(session.organizationId, latestVersion.id)
     : [];
+  const documentContent = latestVersion
+    ? await getDocumentVersionContent(session.organizationId, latestVersion.id)
+    : null;
 
   if (!doc) {
     notFound();
@@ -43,6 +48,17 @@ export default async function DocumentPage({
         <h2 className="surface-title">Grounded summary</h2>
         <p className="surface-sub">{doc.summary}</p>
       </section>
+
+      {documentContent ? (
+        <section className="surface-card">
+          <h2 className="surface-title">Document Content</h2>
+          <DocumentViewer
+            content={documentContent.content}
+            citations={citations}
+            highlightCitations={citations.length > 0}
+          />
+        </section>
+      ) : null}
 
       <section className="surface-card">
         <h3 className="surface-title">Provenance</h3>

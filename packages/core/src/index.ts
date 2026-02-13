@@ -4,3 +4,4 @@ export * from "./chunking";
 export * from "./citations";
 export * from "./retrieval";
 export * from "./rbac";
+export * from "./query-expansion";

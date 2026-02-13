@@ -159,6 +159,13 @@ export type AssistantQueryRequest = {
   threadId?: string;
   filters?: {
     sourceType?: ConnectorType;
+    dateRange?: {
+      from?: string; // ISO date string
+      to?: string; // ISO date string
+    };
+    author?: string; // Owner/author email or name
+    minSourceScore?: number; // Minimum source score (0-100)
+    documentIds?: string[]; // Specific document IDs to search
   };
 };
 

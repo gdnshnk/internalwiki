@@ -7,6 +7,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { resolveRequestId, withRequestId } from "@/lib/request-id";
 import { safeError } from "@/lib/safe-log";
 import { enforceMutationSecurity } from "@/lib/security";
+import { createRequestLogger } from "@internalwiki/observability";
 import type { AssistantQueryStreamEvent } from "@internalwiki/core";
 
 export async function POST(
@@ -14,17 +15,23 @@ export async function POST(
   context: { params: Promise<{ orgId: string }> }
 ): Promise<Response> {
   const requestId = resolveRequestId(request);
+  const log = createRequestLogger(requestId, { orgId: (await context.params).orgId });
+  log.info({ method: request.method, url: request.url }, "Assistant query request");
+
   const securityError = enforceMutationSecurity(request);
   if (securityError) {
+    log.warn("Security check failed");
     return securityError;
   }
 
   const { orgId } = await context.params;
   const sessionResult = await requireSessionContext(requestId);
   if (sessionResult instanceof Response) {
+    log.warn("Session authentication failed");
     return sessionResult;
   }
   const session = sessionResult;
+  log.child({ userId: session.userId, organizationId: session.organizationId });
 
   try {
     assertScopedOrgAccess({ session, targetOrgId: orgId, minimumRole: "viewer" });
@@ -89,12 +96,27 @@ export async function POST(
       send(startEvent);
 
       void (async () => {
+        const requestLog = createRequestLogger(requestId, {
+          orgId,
+          userId: session.userId,
+          mode: parsed.data.mode
+        });
         try {
+          requestLog.debug({ query: parsed.data.query }, "Running assistant query");
           const response = await runAssistantQuery({
             organizationId: orgId,
             input: parsed.data,
             actorId: session.userId
           });
+          requestLog.info(
+            {
+              citations: response.citations.length,
+              claims: response.claims.length,
+              retrievalMs: response.timings.retrievalMs,
+              generationMs: response.timings.generationMs
+            },
+            "Assistant query completed"
+          );
 
           const sourcesEvent: AssistantQueryStreamEvent = {
             type: "sources",

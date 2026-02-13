@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
+import { createRequestLogger } from "@internalwiki/observability";
 
 export function jsonOk<T>(data: T, init?: ResponseInit): NextResponse<T> {
   const headers = new Headers(init?.headers);
@@ -11,6 +12,11 @@ export function jsonOk<T>(data: T, init?: ResponseInit): NextResponse<T> {
 }
 
 export function jsonError(message: string, status = 400, init?: ResponseInit): NextResponse<{ error: string }> {
+  const requestId = init?.headers instanceof Headers ? init.headers.get("x-request-id") : undefined;
+  if (requestId) {
+    const log = createRequestLogger(requestId);
+    log.warn({ status, message }, "API error response");
+  }
   return jsonOk({ error: message }, { status, ...(init ?? {}) });
 }
 
