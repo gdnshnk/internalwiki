@@ -1,0 +1,47 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": [
+        "./*"
+      ],
+      "@internalwiki/core": [
+        "../../packages/core/src/index.ts"
+      ],
+      "@internalwiki/ai": [
+        "../../packages/ai/src/index.ts"
+      ],
+      "@internalwiki/connectors": [
+        "../../packages/connectors/src/index.ts"
+      ],
+      "@internalwiki/db": [
+        "../../packages/db/src/index.ts"
+      ]
+    },
+    "jsx": "preserve",
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "es2022"
+    ],
+    "allowJs": false,
+    "incremental": true,
+    "noEmit": true,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "isolatedModules": true
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}

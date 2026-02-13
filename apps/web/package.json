@@ -1,0 +1,36 @@
+{
+  "name": "@internalwiki/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "eval:retrieval": "tsx --tsconfig tsconfig.json scripts/run-retrieval-eval.ts"
+  },
+  "dependencies": {
+    "@internalwiki/ai": "0.1.0",
+    "@internalwiki/connectors": "0.1.0",
+    "@internalwiki/core": "0.1.0",
+    "@internalwiki/db": "0.1.0",
+    "graphile-worker": "^0.16.6",
+    "next": "15.1.4",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.16",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^3.2.4"
+  }
+}
