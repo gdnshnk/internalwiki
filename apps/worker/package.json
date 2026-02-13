@@ -1,0 +1,24 @@
+{
+  "name": "@internalwiki/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@internalwiki/ai": "0.1.0",
+    "@internalwiki/connectors": "0.1.0",
+    "@internalwiki/core": "0.1.0",
+    "@internalwiki/db": "0.1.0",
+    "graphile-worker": "^0.16.6"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^3.2.4"
+  }
+}
