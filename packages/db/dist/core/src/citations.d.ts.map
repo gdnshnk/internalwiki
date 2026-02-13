@@ -1,0 +1,1 @@
+{"version":3,"file":"citations.d.ts","sourceRoot":"","sources":["../../../../core/src/citations.ts"],"names":[],"mappings":"AAAA,OAAO,KAAK,EAAE,QAAQ,EAAE,MAAM,SAAS,CAAC;AAExC,wBAAgB,gBAAgB,CAAC,QAAQ,EAAE,QAAQ,GAAG,OAAO,CAQ5D;AAED,wBAAgB,gBAAgB,CAAC,MAAM,EAAE;IACvC,MAAM,EAAE,MAAM,CAAC;IACf,SAAS,EAAE,QAAQ,EAAE,CAAC;CACvB,GAAG,MAAM,CAOT"}
