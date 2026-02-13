@@ -13,25 +13,11 @@ export const logger = pino({
     }
   },
   timestamp: pino.stdTimeFunctions.isoTime,
-  ...(isDevelopment
-    ? {
-        transport: {
-          target: "pino-pretty",
-          options: {
-            colorize: true,
-            translateTime: "HH:MM:ss Z",
-            ignore: "pid,hostname"
-          }
-        }
-      }
-    : {
-        // Production: structured JSON logs
-        serializers: {
-          req: pino.stdSerializers.req,
-          res: pino.stdSerializers.res,
-          err: pino.stdSerializers.err
-        }
-      })
+  serializers: {
+    req: pino.stdSerializers.req,
+    res: pino.stdSerializers.res,
+    err: pino.stdSerializers.err
+  }
 });
 
 export function createLogger(context?: Record<string, unknown>): typeof logger {

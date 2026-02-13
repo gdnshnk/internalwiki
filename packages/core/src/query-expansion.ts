@@ -1,4 +1,9 @@
-import type { AiProvider } from "@internalwiki/ai";
+export type QueryExpansionProvider = {
+  answerQuestion(input: {
+    question: string;
+    contextChunks: unknown[];
+  }): Promise<{ answer: string }>;
+};
 
 export type ExpandedQuery = {
   original: string;
@@ -11,7 +16,7 @@ export type ExpandedQuery = {
  */
 export async function expandQuery(
   query: string,
-  aiProvider: AiProvider
+  aiProvider: QueryExpansionProvider
 ): Promise<ExpandedQuery> {
   // Simple expansion: generate 3-5 query variations
   const expansionPrompt = `Generate 3-5 alternative phrasings or related queries for the following question. Return only the queries, one per line, without numbering or bullets:

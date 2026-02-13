@@ -2,7 +2,7 @@ import { getRedisClient } from "./client";
 import type { CacheKeyBuilder, CacheOptions } from "./types";
 
 const DEFAULT_SERIALIZE = (value: unknown): string => JSON.stringify(value);
-const DEFAULT_DESERIALIZE = <T>(value: string): T => JSON.parse(value) as T;
+const DEFAULT_DESERIALIZE = (value: string): unknown => JSON.parse(value);
 
 export function cached<T extends unknown[], R>(
   options: CacheOptions,
@@ -23,7 +23,7 @@ export function cached<T extends unknown[], R>(
       }
 
       const serialize = options.serialize ?? DEFAULT_SERIALIZE;
-      const deserialize = options.deserialize ?? DEFAULT_DESERIALIZE;
+      const deserialize = (options.deserialize ?? DEFAULT_DESERIALIZE) as (value: string) => R;
       const prefix = options.keyPrefix ?? "cache";
       const cacheKey = `${prefix}:${keyBuilder(...args)}`;
 
@@ -31,7 +31,7 @@ export function cached<T extends unknown[], R>(
         // Try to get from cache
         const cachedValue = await redis.get(cacheKey);
         if (cachedValue !== null) {
-          return deserialize<R>(cachedValue);
+          return deserialize(cachedValue);
         }
 
         // Execute original method
@@ -89,8 +89,8 @@ export async function getCache<T>(
       return null;
     }
 
-    const deserialize = options?.deserialize ?? DEFAULT_DESERIALIZE;
-    return deserialize<T>(value);
+    const deserialize = (options?.deserialize ?? DEFAULT_DESERIALIZE) as (raw: string) => T;
+    return deserialize(value);
   } catch (error) {
     console.error(`[Cache] Error getting key ${key}:`, error);
     return null;

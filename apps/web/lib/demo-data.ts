@@ -1,16 +1,13 @@
 import type { Citation, DocumentChunk, DocumentRecord, EvidenceItem, EvidenceReason } from "@internalwiki/core";
 import { computeSourceScore } from "@internalwiki/core";
 import {
+  getDocumentByIdCached,
   hashEmbedding,
-  searchDocumentChunksHybrid,
+  listDocumentsCached,
+  searchDocumentChunksHybridCached,
   toDocumentChunk,
   vectorToSqlLiteral
 } from "@internalwiki/db";
-import {
-  getDocumentById as getDocumentByIdCached,
-  listDocuments as listDocumentsCached,
-  searchDocumentChunksHybrid as searchDocumentChunksHybridCached
-} from "@internalwiki/db/cached-repositories";
 
 export async function listDocuments(orgId: string): Promise<DocumentRecord[]> {
   return listDocumentsCached(orgId);

@@ -11,6 +11,12 @@ export type AdvancedSearchFilters = {
   documentIds?: string[];
 };
 
+const CONNECTOR_TYPES: ConnectorType[] = ["google_docs", "google_drive", "notion"];
+
+function toConnectorType(value: string): ConnectorType | undefined {
+  return CONNECTOR_TYPES.includes(value as ConnectorType) ? (value as ConnectorType) : undefined;
+}
+
 export function AdvancedSearchFilters(props: {
   filters: AdvancedSearchFilters;
   onFiltersChange: (filters: AdvancedSearchFilters) => void;
@@ -60,11 +66,11 @@ export function AdvancedSearchFilters(props: {
         <div className="advanced-search-panel">
           <div className="filter-group">
             <label htmlFor="filter-source-type">Source Type</label>
-            <select
-              id="filter-source-type"
-              value={localFilters.sourceType ?? ""}
-              onChange={(e) => updateFilter("sourceType", e.target.value || undefined)}
-            >
+              <select
+                id="filter-source-type"
+                value={localFilters.sourceType ?? ""}
+                onChange={(e) => updateFilter("sourceType", toConnectorType(e.target.value))}
+              >
               <option value="">All Sources</option>
               <option value="google_docs">Google Docs</option>
               <option value="google_drive">Google Drive</option>
