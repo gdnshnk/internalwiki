@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true,
+    "resolveJsonModule": true,
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "baseUrl": ".",
+    "paths": {
+      "@internalwiki/core": ["packages/core/src/index.ts"],
+      "@internalwiki/ai": ["packages/ai/src/index.ts"],
+      "@internalwiki/connectors": ["packages/connectors/src/index.ts"],
+      "@internalwiki/db": ["packages/db/src/index.ts"]
+    }
+  }
+}

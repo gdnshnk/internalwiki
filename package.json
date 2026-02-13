@@ -1,0 +1,23 @@
+{
+  "name": "internalwiki",
+  "private": true,
+  "version": "0.1.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm --workspace @internalwiki/web run dev",
+    "dev:worker": "npm --workspace @internalwiki/worker run dev",
+    "build": "npm run --workspaces build",
+    "typecheck": "npm run --workspaces typecheck",
+    "test": "npm run --workspaces test",
+    "test:quality": "npm --workspace @internalwiki/web run test -- tests/retrieval-eval-regression.test.ts",
+    "eval:retrieval": "npm --workspace @internalwiki/web run eval:retrieval",
+    "db:migrate": "psql \"$DATABASE_URL\" -f packages/db/migrations/0001_init.sql && psql \"$DATABASE_URL\" -f packages/db/migrations/0002_runtime_indexes.sql && psql \"$DATABASE_URL\" -f packages/db/migrations/0003_auth_security.sql && psql \"$DATABASE_URL\" -f packages/db/migrations/0004_quality_feedback.sql && psql \"$DATABASE_URL\" -f packages/db/migrations/0005_session_maintenance.sql && psql \"$DATABASE_URL\" -f packages/db/migrations/0006_traceability_marketing.sql",
+    "staging:check": "npm run typecheck && npm run test && npm run --workspace @internalwiki/web build"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
