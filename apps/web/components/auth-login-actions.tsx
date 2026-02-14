@@ -41,7 +41,7 @@ export function AuthLoginActions(props: {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
-  const [busy, setBusy] = useState<"google" | "bootstrap" | "password" | null>(null);
+  const [busy, setBusy] = useState<"google" | "bootstrap" | "bootstrapOnboarded" | "password" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const derivedError = useMemo(() => errorMessage(props.authErrorCode), [props.authErrorCode]);
@@ -178,6 +178,37 @@ export function AuthLoginActions(props: {
       const payload = (await response.json()) as { ok?: boolean; redirectTo?: string; error?: string };
       if (!response.ok || !payload.ok || !payload.redirectTo) {
         throw new Error(payload.error ?? `Failed to bootstrap local session (${response.status}).`);
+      }
+
+      router.push(payload.redirectTo);
+      router.refresh();
+    } catch (requestError) {
+      setError((requestError as Error).message);
+      setBusy(null);
+    }
+  }
+
+  async function bootstrapOnboardedSession(): Promise<void> {
+    if (busy) {
+      return;
+    }
+
+    setError(null);
+    setBusy("bootstrapOnboarded");
+    try {
+      const response = await fetch("/api/dev/bootstrap-session/onboarded", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          next: props.nextPath
+        })
+      });
+
+      const payload = (await response.json()) as { ok?: boolean; redirectTo?: string; error?: string };
+      if (!response.ok || !payload.ok || !payload.redirectTo) {
+        throw new Error(payload.error ?? `Failed to bootstrap demo session (${response.status}).`);
       }
 
       router.push(payload.redirectTo);
@@ -348,14 +379,26 @@ export function AuthLoginActions(props: {
         </button>
 
         {props.showDevBootstrap ? (
-          <button
-            type="button"
-            className="auth-dev-button"
-            disabled={!props.canUseBootstrap || busy !== null}
-            onClick={() => void bootstrapLocalSession()}
-          >
-            {busy === "bootstrap" ? "Bootstrapping..." : "Bootstrap local session"}
-          </button>
+          <>
+            <button
+              type="button"
+              className="auth-dev-button"
+              disabled={!props.canUseBootstrap || busy !== null}
+              onClick={() => void bootstrapLocalSession()}
+            >
+              {busy === "bootstrap" ? "Bootstrapping..." : "Bootstrap local session"}
+            </button>
+            <button
+              type="button"
+              className="auth-dev-button"
+              disabled={!props.canUseBootstrap || busy !== null}
+              onClick={() => void bootstrapOnboardedSession()}
+            >
+              {busy === "bootstrapOnboarded"
+                ? "Bootstrapping demo..."
+                : "Bootstrap local session (onboarding demo)"}
+            </button>
+          </>
         ) : null}
 
         {!props.canUseGoogle ? <p className="auth-config-note">Google sign-in is currently unavailable.</p> : null}
