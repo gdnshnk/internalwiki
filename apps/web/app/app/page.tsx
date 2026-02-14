@@ -1,16 +1,19 @@
 import { AssistantWorkspace } from "@/components/assistant-workspace";
+import { AppOnboardingChecklist } from "@/components/app-onboarding-checklist";
 import { getSessionContextOptional } from "@/lib/session";
 import { redirect } from "next/navigation";
 import {
   countDocumentsByOrganization,
   getChatThread,
+  getUserOnboardingCompletedAt,
+  listChatThreads,
   listConnectorAccounts
 } from "@internalwiki/db";
 
 export default async function DashboardPage({
   searchParams
 }: {
-  searchParams: Promise<{ thread?: string }>;
+  searchParams: Promise<{ thread?: string; onboarding?: string }>;
 }) {
   const session = await getSessionContextOptional();
   if (!session) {
@@ -18,17 +21,31 @@ export default async function DashboardPage({
   }
 
   const resolvedSearch = await searchParams;
-  const [connectors, documentCount] = await Promise.all([
+  const [connectors, documentCount, latestThreads, onboardingCompletedAt, selectedThread] = await Promise.all([
     listConnectorAccounts(session.organizationId),
-    countDocumentsByOrganization(session.organizationId)
+    countDocumentsByOrganization(session.organizationId),
+    listChatThreads(session.organizationId, 1),
+    getUserOnboardingCompletedAt(session.userId),
+    resolvedSearch.thread ? getChatThread(session.organizationId, resolvedSearch.thread) : Promise.resolve(null)
   ]);
-  const selectedThread = resolvedSearch.thread
-    ? await getChatThread(session.organizationId, resolvedSearch.thread)
-    : null;
+  const forceOnboarding = resolvedSearch.onboarding === "1";
+  const onboardingProgress = {
+    connected: connectors.length > 0,
+    synced: documentCount > 0,
+    askedFirstQuestion: latestThreads.length > 0
+  };
+  const onboardingCard = (
+    <AppOnboardingChecklist
+      forced={forceOnboarding}
+      initialCompleted={Boolean(onboardingCompletedAt)}
+      progress={onboardingProgress}
+    />
+  );
 
   if (connectors.length === 0) {
     return (
       <main className="page-wrap">
+        {onboardingCard}
         <section className="surface-card">
           <p className="workspace-header__eyebrow">First run</p>
           <h1 className="surface-title">Connect your first workspace source</h1>
@@ -47,6 +64,7 @@ export default async function DashboardPage({
   if (documentCount === 0) {
     return (
       <main className="page-wrap">
+        {onboardingCard}
         <section className="surface-card">
           <p className="workspace-header__eyebrow">First sync</p>
           <h1 className="surface-title">Run your first sync</h1>
@@ -74,31 +92,34 @@ export default async function DashboardPage({
   }
 
   return (
-    <AssistantWorkspace
-      orgId={session.organizationId}
-      title={selectedThread ? selectedThread.thread.title : "Search your organization knowledge"}
-      subtitle={
-        selectedThread
-          ? `Resumed thread with ${selectedThread.messages.length} prior messages and citations.`
-          : "Ask once, get grounded answers with traceable evidence and trust scores."
-      }
-      defaultMode="ask"
-      quickMode
-      initialThreadId={selectedThread?.thread.id}
-      initialMessages={
-        selectedThread
-          ? selectedThread.messages.map((message) => ({
-              id: message.id,
-              role: message.role,
-              content: message.messageText,
-              citations: message.citations,
-              confidence: message.confidence,
-              sourceScore: message.sourceScore,
-              threadId: selectedThread.thread.id,
-              messageId: message.role === "assistant" ? message.id : undefined
-            }))
-          : undefined
-      }
-    />
+    <main className="page-wrap">
+      {onboardingCard}
+      <AssistantWorkspace
+        orgId={session.organizationId}
+        title={selectedThread ? selectedThread.thread.title : "Search your organization knowledge"}
+        subtitle={
+          selectedThread
+            ? `Resumed thread with ${selectedThread.messages.length} prior messages and citations.`
+            : "Ask once, get grounded answers with traceable evidence and trust scores."
+        }
+        defaultMode="ask"
+        quickMode
+        initialThreadId={selectedThread?.thread.id}
+        initialMessages={
+          selectedThread
+            ? selectedThread.messages.map((message) => ({
+                id: message.id,
+                role: message.role,
+                content: message.messageText,
+                citations: message.citations,
+                confidence: message.confidence,
+                sourceScore: message.sourceScore,
+                threadId: selectedThread.thread.id,
+                messageId: message.role === "assistant" ? message.id : undefined
+              }))
+            : undefined
+        }
+      />
+    </main>
   );
 }

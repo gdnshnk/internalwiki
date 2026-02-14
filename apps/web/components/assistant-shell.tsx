@@ -160,6 +160,17 @@ export function AssistantShell(props: { children: ReactNode; recentThreads: Chat
                 >
                   Connectors
                 </Link>
+                <Link
+                  href="/app?onboarding=1"
+                  className="settings-popover__item"
+                  role="menuitem"
+                  onClick={() => {
+                    setSettingsOpen(false);
+                    setMobileNavOpen(false);
+                  }}
+                >
+                  Getting started
+                </Link>
                 <div className="settings-popover__item settings-popover__item--control">
                   <ThemeToggle variant="menu" />
                 </div>

@@ -16,6 +16,8 @@ import {
   createUserSession,
   getActiveUserSession,
   getConnectorSyncStats,
+  getUserOnboardingCompletedAt,
+  markUserOnboardingCompleted,
   getRecentDeadLetterEvents,
   getReviewQueueStats,
   revokeUserSession
@@ -139,5 +141,37 @@ describe("db repositories launch-critical helpers", () => {
     expect(sync.last7d.failureByClassification.payload).toBe(1);
     expect(review.pending).toBe(6);
     expect(deadLetters.last7d).toBe(4);
+  });
+
+  it("reads onboarding completion timestamp by user id", async () => {
+    queryMock.mockResolvedValueOnce([
+      {
+        onboarding_completed_at: "2026-02-14T16:00:00.000Z"
+      }
+    ]);
+
+    const result = await getUserOnboardingCompletedAt("user_1");
+
+    expect(result).toBe("2026-02-14T16:00:00.000Z");
+  });
+
+  it("marks onboarding completion idempotently", async () => {
+    queryMock
+      .mockResolvedValueOnce([
+        {
+          onboarding_completed_at: "2026-02-14T16:00:00.000Z"
+        }
+      ])
+      .mockResolvedValueOnce([
+        {
+          onboarding_completed_at: "2026-02-14T16:00:00.000Z"
+        }
+      ]);
+
+    const first = await markUserOnboardingCompleted("user_1");
+    const second = await markUserOnboardingCompleted("user_1");
+
+    expect(first).toBe("2026-02-14T16:00:00.000Z");
+    expect(second).toBe("2026-02-14T16:00:00.000Z");
   });
 });

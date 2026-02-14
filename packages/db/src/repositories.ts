@@ -3025,6 +3025,45 @@ export async function getUserByEmail(email: string): Promise<{ id: string; email
   return rows[0] ?? null;
 }
 
+export async function getUserOnboardingCompletedAt(userId: string): Promise<string | undefined> {
+  const rows = await query<{ onboarding_completed_at: string | null }>(
+    `
+      SELECT onboarding_completed_at
+      FROM users
+      WHERE id = $1
+      LIMIT 1
+    `,
+    [userId]
+  );
+
+  return rows[0]?.onboarding_completed_at ?? undefined;
+}
+
+export async function markUserOnboardingCompleted(userId: string): Promise<string | undefined> {
+  const rows = await query<{ onboarding_completed_at: string | null }>(
+    `
+      WITH updated AS (
+        UPDATE users
+        SET onboarding_completed_at = NOW(), updated_at = NOW()
+        WHERE id = $1
+          AND onboarding_completed_at IS NULL
+        RETURNING onboarding_completed_at
+      )
+      SELECT onboarding_completed_at
+      FROM updated
+      UNION ALL
+      SELECT onboarding_completed_at
+      FROM users
+      WHERE id = $1
+        AND NOT EXISTS (SELECT 1 FROM updated)
+      LIMIT 1
+    `,
+    [userId]
+  );
+
+  return rows[0]?.onboarding_completed_at ?? undefined;
+}
+
 export async function ensureOrganization(input: {
   id: string;
   name: string;

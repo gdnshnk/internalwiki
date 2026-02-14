@@ -805,6 +805,37 @@ a:focus-visible {
   gap: 0.82rem;
 }
 
+.onboarding-list {
+  margin: 0.85rem 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.58rem;
+}
+
+.onboarding-step {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: color-mix(in oklab, var(--surface) 86%, transparent);
+  padding: 0.7rem 0.78rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.7rem;
+}
+
+.onboarding-step__title {
+  margin: 0;
+  font-size: 0.89rem;
+  font-weight: 640;
+}
+
+.onboarding-step__sub {
+  margin: 0.24rem 0 0;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
 .connector-manager {
   display: grid;
   gap: 0.82rem;
@@ -1467,6 +1498,11 @@ a:focus-visible {
 @media (max-width: 900px) {
   .assistant-workspace {
     grid-template-columns: 1fr;
+  }
+
+  .onboarding-step {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
   .evidence-rail {
