@@ -171,7 +171,7 @@ a:focus-visible {
 .brand-logo {
   width: 44px;
   height: 44px;
-  color: #000;
+  color: var(--text);
   display: block;
 }
 
@@ -1032,7 +1032,7 @@ a:focus-visible {
 .marketing-brand__logo {
   width: 32px;
   height: 32px;
-  color: #000;
+  color: var(--text);
   display: block;
 }
 
