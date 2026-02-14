@@ -44,7 +44,7 @@ export default async function SetupPage() {
           <a href="/app/settings/connectors" className="ask-submit">
             Open source setup
           </a>
-          <a href="/app/settings/security" className="chip chip--active">
+          <a href="/app/settings/security" className="chip chip--active setup-permissions-cta">
             Permissions diagnostics
           </a>
         </div>

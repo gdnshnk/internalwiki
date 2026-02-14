@@ -6,6 +6,8 @@ const { queryMock } = vi.hoisted(() => ({
 
 vi.mock("../src/client", () => ({
   query: queryMock,
+  queryOrg: vi.fn((_organizationId: string, text: string, params: unknown[] = []) => queryMock(text, params)),
+  querySystem: vi.fn((text: string, params: unknown[] = []) => queryMock(text, params)),
   pool: {
     connect: vi.fn()
   }
@@ -61,8 +63,11 @@ describe("db repositories launch-critical helpers", () => {
           id: "sid_1",
           user_id: "user_1",
           organization_id: "org_1",
+          issued_at: "2026-02-13T00:00:00.000Z",
+          last_seen_at: "2026-02-13T00:00:00.000Z",
           expires_at: "2026-03-13T00:00:00.000Z",
           revoked_at: null,
+          revoked_reason: null,
           metadata: { ipAddress: "127.0.0.1" },
           created_at: "2026-02-13T00:00:00.000Z",
           updated_at: "2026-02-13T00:00:00.000Z"
@@ -73,8 +78,11 @@ describe("db repositories launch-critical helpers", () => {
           id: "sid_1",
           user_id: "user_1",
           organization_id: "org_1",
+          issued_at: "2026-02-13T00:00:00.000Z",
+          last_seen_at: "2026-02-13T00:00:00.000Z",
           expires_at: "2026-03-13T00:00:00.000Z",
           revoked_at: null,
+          revoked_reason: null,
           metadata: { ipAddress: "127.0.0.1" },
           created_at: "2026-02-13T00:00:00.000Z",
           updated_at: "2026-02-13T00:00:00.000Z"

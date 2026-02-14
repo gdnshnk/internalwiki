@@ -25,7 +25,7 @@ export async function POST(request: NextRequest): Promise<Response> {
 
   const sessionEnvelope = parseSessionCookieValue(request.cookies.get("iw_session")?.value);
   if (sessionEnvelope) {
-    await revokeUserSession(sessionEnvelope.sid);
+    await revokeUserSession(sessionEnvelope.sid, "user_logout");
   }
 
   const response = jsonOk({ ok: true }, withRequestId(requestId));

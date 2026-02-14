@@ -9,6 +9,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { resolveRequestId, withRequestId } from "@/lib/request-id";
 import { enforceMutationSecurity } from "@/lib/security";
 import { enqueueSyncConnectorJob } from "@/lib/worker-jobs";
+import { beginIdempotentMutation, finalizeIdempotentMutation } from "@/lib/idempotency";
 import { createConnectorAccount, listConnectorAccounts, upsertUserSourceIdentity } from "@internalwiki/db";
 import { randomUUID } from "node:crypto";
 
@@ -66,7 +67,28 @@ export async function POST(
     return jsonError(parsedBody.error.message, 422, withRequestId(requestId));
   }
 
+  const idempotency = await beginIdempotentMutation({
+    request,
+    requestId,
+    organizationId: orgId,
+    actorId: session.userId,
+    payload: parsedBody.data
+  });
+  if ("response" in idempotency) {
+    return idempotency.response;
+  }
+
   if (parsedBody.data.connectorType === "notion") {
+    await finalizeIdempotentMutation({
+      keyHash: idempotency.keyHash,
+      organizationId: orgId,
+      method: idempotency.method,
+      path: idempotency.path,
+      status: 410,
+      responseBody: {
+        error: "Notion is deprecated and cannot be newly connected. Use Slack or Microsoft integrations."
+      }
+    });
     return jsonError(
       "Notion is deprecated and cannot be newly connected. Use Slack or Microsoft integrations.",
       410,
@@ -140,15 +162,22 @@ export async function POST(
     }
   });
 
-  return jsonOk(
-    {
-      connector: toPublicConnector(connector),
-      syncQueued: Boolean(queuedSync),
-      queueJobId: queuedSync?.jobId ?? null,
-      allConnectors: (await listConnectorAccounts(orgId)).map(toPublicConnector)
-    },
-    withRequestId(requestId)
-  );
+  const responsePayload = {
+    connector: toPublicConnector(connector),
+    syncQueued: Boolean(queuedSync),
+    queueJobId: queuedSync?.jobId ?? null,
+    allConnectors: (await listConnectorAccounts(orgId)).map(toPublicConnector)
+  };
+  await finalizeIdempotentMutation({
+    keyHash: idempotency.keyHash,
+    organizationId: orgId,
+    method: idempotency.method,
+    path: idempotency.path,
+    status: 200,
+    responseBody: responsePayload
+  });
+
+  return jsonOk(responsePayload, withRequestId(requestId));
 }
 
 export async function GET(

@@ -7,10 +7,12 @@ import {
   createMembership,
   createOrUpdateUser,
   createUserSession,
+  getOrCreateSessionPolicy,
   getUserByEmail,
   getRegistrationInviteByCode,
   listConnectorAccounts,
   listOrganizationDomains,
+  revokeOldestSessionsOverLimit,
   resolveMembership,
   updateConnectorAccount
 } from "@internalwiki/db";
@@ -441,13 +443,22 @@ export async function GET(request: NextRequest): Promise<Response> {
     });
   }
 
-  const maxAgeSeconds = 60 * 60 * 24 * 30;
+  const sessionPolicy = await getOrCreateSessionPolicy(membership.organizationId);
+  const maxAgeSeconds = Math.max(60 * 5, sessionPolicy.sessionMaxAgeMinutes * 60);
   const userSession = await createUserSession({
     userId: membership.userId,
     organizationId: membership.organizationId,
     expiresAt: new Date(Date.now() + maxAgeSeconds * 1000).toISOString(),
+    issuedAt: new Date().toISOString(),
+    lastSeenAt: new Date().toISOString(),
     metadata,
     createdBy: membership.userId
+  });
+  await revokeOldestSessionsOverLimit({
+    organizationId: membership.organizationId,
+    userId: membership.userId,
+    keepLimit: sessionPolicy.concurrentSessionLimit,
+    reason: "concurrent_session_limit"
   });
 
   const sessionCookie = createSessionCookieValue({

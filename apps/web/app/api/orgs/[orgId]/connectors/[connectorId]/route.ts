@@ -8,6 +8,7 @@ import { assertScopedOrgAccess } from "@/lib/organization";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { resolveRequestId, withRequestId } from "@/lib/request-id";
 import { enforceMutationSecurity } from "@/lib/security";
+import { beginIdempotentMutation, finalizeIdempotentMutation } from "@/lib/idempotency";
 import { deleteConnectorAccount, updateConnectorAccount } from "@internalwiki/db";
 
 const patchSchema = z.object({
@@ -56,6 +57,17 @@ export async function PATCH(
     return jsonError(parsed.error.message, 422, withRequestId(requestId));
   }
 
+  const idempotency = await beginIdempotentMutation({
+    request,
+    requestId,
+    organizationId: orgId,
+    actorId: session.userId,
+    payload: parsed.data
+  });
+  if ("response" in idempotency) {
+    return idempotency.response;
+  }
+
   const connector = await updateConnectorAccount(orgId, connectorId, {
     status: parsed.data.status,
     displayName: parsed.data.displayName,
@@ -66,6 +78,14 @@ export async function PATCH(
   });
 
   if (!connector) {
+    await finalizeIdempotentMutation({
+      keyHash: idempotency.keyHash,
+      organizationId: orgId,
+      method: idempotency.method,
+      path: idempotency.path,
+      status: 404,
+      responseBody: { error: "Connector account not found" }
+    });
     return jsonError("Connector account not found", 404, withRequestId(requestId));
   }
 
@@ -86,7 +106,17 @@ export async function PATCH(
     }
   });
 
-  return jsonOk({ connector: toPublicConnector(connector) }, withRequestId(requestId));
+  const responsePayload = { connector: toPublicConnector(connector) };
+  await finalizeIdempotentMutation({
+    keyHash: idempotency.keyHash,
+    organizationId: orgId,
+    method: idempotency.method,
+    path: idempotency.path,
+    status: 200,
+    responseBody: responsePayload
+  });
+
+  return jsonOk(responsePayload, withRequestId(requestId));
 }
 
 export async function DELETE(
@@ -121,8 +151,27 @@ export async function DELETE(
     return rateLimitError({ retryAfterMs: deleteRate.retryAfterMs, requestId });
   }
 
+  const idempotency = await beginIdempotentMutation({
+    request,
+    requestId,
+    organizationId: orgId,
+    actorId: session.userId,
+    payload: { connectorId }
+  });
+  if ("response" in idempotency) {
+    return idempotency.response;
+  }
+
   const deleted = await deleteConnectorAccount(orgId, connectorId);
   if (!deleted) {
+    await finalizeIdempotentMutation({
+      keyHash: idempotency.keyHash,
+      organizationId: orgId,
+      method: idempotency.method,
+      path: idempotency.path,
+      status: 404,
+      responseBody: { error: "Connector account not found" }
+    });
     return jsonError("Connector account not found", 404, withRequestId(requestId));
   }
 
@@ -135,5 +184,15 @@ export async function DELETE(
     payload: {}
   });
 
-  return jsonOk({ deleted: true }, withRequestId(requestId));
+  const responsePayload = { deleted: true };
+  await finalizeIdempotentMutation({
+    keyHash: idempotency.keyHash,
+    organizationId: orgId,
+    method: idempotency.method,
+    path: idempotency.path,
+    status: 200,
+    responseBody: responsePayload
+  });
+
+  return jsonOk(responsePayload, withRequestId(requestId));
 }

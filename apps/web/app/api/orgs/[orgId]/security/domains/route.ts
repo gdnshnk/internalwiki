@@ -7,6 +7,7 @@ import { assertScopedOrgAccess } from "@/lib/organization";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { resolveRequestId, withRequestId } from "@/lib/request-id";
 import { enforceMutationSecurity } from "@/lib/security";
+import { beginIdempotentMutation, finalizeIdempotentMutation } from "@/lib/idempotency";
 
 const createDomainSchema = z.object({
   domain: z.string().min(3),
@@ -76,6 +77,17 @@ export async function POST(
     return jsonError(parsed.error.message, 422, withRequestId(requestId));
   }
 
+  const idempotency = await beginIdempotentMutation({
+    request,
+    requestId,
+    organizationId: orgId,
+    actorId: session.userId,
+    payload: parsed.data
+  });
+  if ("response" in idempotency) {
+    return idempotency.response;
+  }
+
   const domain = await addOrganizationDomain({
     organizationId: orgId,
     domain: parsed.data.domain,
@@ -94,5 +106,15 @@ export async function POST(
     }
   });
 
-  return jsonOk({ domain }, withRequestId(requestId));
+  const responsePayload = { domain };
+  await finalizeIdempotentMutation({
+    keyHash: idempotency.keyHash,
+    organizationId: orgId,
+    method: idempotency.method,
+    path: idempotency.path,
+    status: 200,
+    responseBody: responsePayload
+  });
+
+  return jsonOk(responsePayload, withRequestId(requestId));
 }

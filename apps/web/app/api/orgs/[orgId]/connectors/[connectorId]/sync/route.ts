@@ -6,6 +6,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { resolveRequestId, withRequestId } from "@/lib/request-id";
 import { enforceMutationSecurity } from "@/lib/security";
 import { enqueueSyncConnectorJob } from "@/lib/worker-jobs";
+import { beginIdempotentMutation, finalizeIdempotentMutation } from "@/lib/idempotency";
 import { getConnectorAccount } from "@internalwiki/db";
 
 export async function POST(
@@ -40,8 +41,27 @@ export async function POST(
     return rateLimitError({ retryAfterMs: rate.retryAfterMs, requestId });
   }
 
+  const idempotency = await beginIdempotentMutation({
+    request,
+    requestId,
+    organizationId: orgId,
+    actorId: session.userId,
+    payload: { connectorId }
+  });
+  if ("response" in idempotency) {
+    return idempotency.response;
+  }
+
   const connector = await getConnectorAccount(orgId, connectorId);
   if (!connector) {
+    await finalizeIdempotentMutation({
+      keyHash: idempotency.keyHash,
+      organizationId: orgId,
+      method: idempotency.method,
+      path: idempotency.path,
+      status: 404,
+      responseBody: { error: "Connector account not found" }
+    });
     return jsonError("Connector account not found", 404, withRequestId(requestId));
   }
 
@@ -65,14 +85,21 @@ export async function POST(
     }
   });
 
-  return jsonOk(
-    {
-      status: "queued",
-      connectorId,
-      jobId: queued.jobId,
-      scheduledAt: new Date().toISOString(),
-      nextScheduledSync: new Date(Date.now() + 15 * 60 * 1000).toISOString()
-    },
-    withRequestId(requestId)
-  );
+  const responsePayload = {
+    status: "queued",
+    connectorId,
+    jobId: queued.jobId,
+    scheduledAt: new Date().toISOString(),
+    nextScheduledSync: new Date(Date.now() + 15 * 60 * 1000).toISOString()
+  };
+  await finalizeIdempotentMutation({
+    keyHash: idempotency.keyHash,
+    organizationId: orgId,
+    method: idempotency.method,
+    path: idempotency.path,
+    status: 200,
+    responseBody: responsePayload
+  });
+
+  return jsonOk(responsePayload, withRequestId(requestId));
 }

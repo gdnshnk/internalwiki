@@ -24,11 +24,12 @@ import {
   GOOGLE_CONNECTOR_TYPES,
   isConnectorType
 } from "@internalwiki/core";
-import { query, pool } from "./client";
+import { query, queryOrg, querySystem, withOrgTransaction, pool } from "./client";
 import type {
   AuditExportJobRecord,
   IncidentSummaryRecord,
   MarketingWaitlistLeadRecord,
+  PrivacyRequestRecord,
   ConnectorSyncStats,
   ReviewQueueStats,
   RecentDeadLetterStats,
@@ -130,7 +131,10 @@ type DbUserSessionRow = {
   user_id: string;
   organization_id: string;
   expires_at: string;
+  issued_at: string;
+  last_seen_at: string;
   revoked_at: string | null;
+  revoked_reason: string | null;
   metadata: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
@@ -274,6 +278,21 @@ type DbIdempotencyKeyRow = {
   updated_at: string;
 };
 
+type DbPrivacyRequestRow = {
+  id: string;
+  organization_id: string;
+  request_type: "export" | "delete";
+  subject_user_id: string;
+  requested_by: string | null;
+  status: "requested" | "processing" | "completed" | "blocked" | "failed";
+  legal_hold_blocked: boolean;
+  result: Record<string, unknown> | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+  processed_at: string | null;
+};
+
 type DbUserSourceIdentityRow = {
   source_system: "slack" | "microsoft";
   source_user_key: string;
@@ -373,7 +392,10 @@ function mapUserSession(row: DbUserSessionRow): UserSessionRecord {
     userId: row.user_id,
     organizationId: row.organization_id,
     expiresAt: row.expires_at,
+    issuedAt: row.issued_at,
+    lastSeenAt: row.last_seen_at,
     revokedAt: row.revoked_at ?? undefined,
+    revokedReason: row.revoked_reason ?? undefined,
     metadata: row.metadata ?? undefined,
     createdAt: row.created_at,
     updatedAt: row.updated_at
@@ -482,6 +504,23 @@ function mapIncidentEvent(row: DbIncidentEventRow): IncidentSummaryRecord {
     metadata: row.metadata ?? {},
     occurredAt: row.occurred_at,
     resolvedAt: row.resolved_at ?? undefined
+  };
+}
+
+function mapPrivacyRequest(row: DbPrivacyRequestRow): PrivacyRequestRecord {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    requestType: row.request_type,
+    subjectUserId: row.subject_user_id,
+    requestedBy: row.requested_by ?? undefined,
+    status: row.status,
+    legalHoldBlocked: row.legal_hold_blocked,
+    result: row.result ?? {},
+    errorMessage: row.error_message ?? undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    processedAt: row.processed_at ?? undefined
   };
 }
 
@@ -965,7 +1004,7 @@ export async function resolveMembership(params: {
     return null;
   }
 
-  const rows = await query<DbMembershipRow>(
+  const rows = await querySystem<DbMembershipRow>(
     `
       SELECT m.user_id, m.organization_id, m.role, u.email
       FROM memberships m
@@ -1002,6 +1041,11 @@ export async function upsertGoogleUserAndEnsureMembership(params: {
   const client = await pool.connect();
 
   try {
+    await client.query("SELECT set_config('internalwiki.rls_mode', $1, false)", [
+      process.env.INTERNALWIKI_COMPLIANCE_MODE === "enforce" ? "enforce" : "audit"
+    ]);
+    await client.query("SELECT set_config('internalwiki.rls_bypass', 'on', false)");
+    await client.query("SELECT set_config('internalwiki.org_id', '', false)");
     await client.query("BEGIN");
 
     const organizationId = `org_${params.organizationSlug}`;
@@ -1068,6 +1112,12 @@ export async function upsertGoogleUserAndEnsureMembership(params: {
     await client.query("ROLLBACK");
     throw error;
   } finally {
+    try {
+      await client.query("SELECT set_config('internalwiki.rls_bypass', 'off', false)");
+      await client.query("SELECT set_config('internalwiki.org_id', '', false)");
+    } catch {
+      // no-op cleanup; connection release still proceeds
+    }
     client.release();
   }
 }
@@ -3598,10 +3648,14 @@ export async function revokeOrganizationSessions(
   organizationId: string,
   actorId?: string
 ): Promise<number> {
-  const rows = await query<{ id: string }>(
+  const rows = await queryOrg<{ id: string }>(
+    organizationId,
     `
       UPDATE user_sessions
-      SET revoked_at = NOW(), updated_at = NOW(), created_by = COALESCE($2, created_by)
+      SET revoked_at = NOW(),
+          revoked_reason = 'org_revoke_all',
+          updated_at = NOW(),
+          created_by = COALESCE($2, created_by)
       WHERE organization_id = $1
         AND revoked_at IS NULL
       RETURNING id
@@ -4202,7 +4256,7 @@ export async function listEvalRuns(
 }
 
 export async function cleanupExpiredSessions(maxRows = 2000): Promise<number> {
-  const rows = await query<{ id: string }>(
+  const rows = await querySystem<{ id: string }>(
     `
       DELETE FROM user_sessions
       WHERE id IN (
@@ -4223,7 +4277,7 @@ export async function cleanupExpiredSessions(maxRows = 2000): Promise<number> {
 export async function cleanupStaleRateLimits(input?: { olderThanMs?: number; maxRows?: number }): Promise<number> {
   const olderThanMs = input?.olderThanMs ?? 1000 * 60 * 60 * 24 * 2;
   const maxRows = input?.maxRows ?? 5000;
-  const rows = await query<{ bucket_key: string }>(
+  const rows = await querySystem<{ bucket_key: string }>(
     `
       DELETE FROM api_rate_limits
       WHERE (bucket_key, window_start) IN (
@@ -4239,6 +4293,650 @@ export async function cleanupStaleRateLimits(input?: { olderThanMs?: number; max
   );
 
   return rows.length;
+}
+
+export async function hasActiveLegalHold(input: {
+  organizationId: string;
+  userId: string;
+}): Promise<boolean> {
+  const rows = await queryOrg<{ count: string }>(
+    input.organizationId,
+    `
+      SELECT COUNT(*)::text AS count
+      FROM legal_holds
+      WHERE organization_id = $1
+        AND active = TRUE
+        AND (
+          scope = 'organization'
+          OR (scope = 'user' AND user_id = $2)
+        )
+    `,
+    [input.organizationId, input.userId]
+  );
+
+  return Number(rows[0]?.count ?? 0) > 0;
+}
+
+export async function exportUserPrivacyData(input: {
+  organizationId: string;
+  userId: string;
+}): Promise<Record<string, unknown>> {
+  const [user, sessions, identities, threads, messages] = await Promise.all([
+    queryOrg<{
+      id: string;
+      email: string;
+      display_name: string | null;
+      role: OrgRole;
+    }>(
+      input.organizationId,
+      `
+        SELECT
+          u.id,
+          u.email,
+          u.display_name,
+          m.role
+        FROM users u
+        JOIN memberships m
+          ON m.user_id = u.id
+        WHERE m.organization_id = $1
+          AND u.id = $2
+        LIMIT 1
+      `,
+      [input.organizationId, input.userId]
+    ),
+    queryOrg<{
+      id: string;
+      issued_at: string;
+      last_seen_at: string;
+      expires_at: string;
+      revoked_at: string | null;
+      revoked_reason: string | null;
+      created_at: string;
+    }>(
+      input.organizationId,
+      `
+        SELECT
+          id,
+          issued_at,
+          last_seen_at,
+          expires_at,
+          revoked_at,
+          revoked_reason,
+          created_at
+        FROM user_sessions
+        WHERE organization_id = $1
+          AND user_id = $2
+        ORDER BY created_at DESC
+        LIMIT 500
+      `,
+      [input.organizationId, input.userId]
+    ),
+    queryOrg<{
+      id: string;
+      source_system: string;
+      source_user_key: string;
+      display_name: string | null;
+      created_at: string;
+    }>(
+      input.organizationId,
+      `
+        SELECT
+          id,
+          source_system,
+          source_user_key,
+          display_name,
+          created_at
+        FROM user_source_identities
+        WHERE organization_id = $1
+          AND user_id = $2
+        ORDER BY created_at DESC
+      `,
+      [input.organizationId, input.userId]
+    ),
+    queryOrg<{
+      id: string;
+      title: string | null;
+      created_at: string;
+      updated_at: string;
+    }>(
+      input.organizationId,
+      `
+        SELECT id, title, created_at, updated_at
+        FROM chat_threads
+        WHERE organization_id = $1
+          AND created_by = $2
+        ORDER BY created_at DESC
+        LIMIT 500
+      `,
+      [input.organizationId, input.userId]
+    ),
+    queryOrg<{
+      id: string;
+      thread_id: string;
+      role: "user" | "assistant";
+      message_text: string;
+      created_at: string;
+    }>(
+      input.organizationId,
+      `
+        SELECT
+          id,
+          thread_id,
+          role,
+          message_text,
+          created_at
+        FROM chat_messages
+        WHERE organization_id = $1
+          AND created_by = $2
+        ORDER BY created_at DESC
+        LIMIT 2000
+      `,
+      [input.organizationId, input.userId]
+    )
+  ]);
+
+  return {
+    exportedAt: nowIso(),
+    organizationId: input.organizationId,
+    subjectUserId: input.userId,
+    user: user[0]
+      ? {
+          id: user[0].id,
+          email: user[0].email,
+          displayName: user[0].display_name ?? undefined,
+          role: user[0].role
+        }
+      : null,
+    sessions: sessions.map((row) => ({
+      id: row.id,
+      issuedAt: row.issued_at,
+      lastSeenAt: row.last_seen_at,
+      expiresAt: row.expires_at,
+      revokedAt: row.revoked_at ?? undefined,
+      revokedReason: row.revoked_reason ?? undefined,
+      createdAt: row.created_at
+    })),
+    sourceIdentities: identities.map((row) => ({
+      id: row.id,
+      sourceSystem: row.source_system,
+      sourceUserKey: row.source_user_key,
+      displayName: row.display_name ?? undefined,
+      createdAt: row.created_at
+    })),
+    chatThreads: threads.map((row) => ({
+      id: row.id,
+      title: row.title ?? "Untitled thread",
+      createdAt: row.created_at,
+      updatedAt: row.updated_at
+    })),
+    chatMessages: messages.map((row) => ({
+      id: row.id,
+      threadId: row.thread_id,
+      role: row.role,
+      messageText: row.message_text,
+      createdAt: row.created_at
+    }))
+  };
+}
+
+export async function createPrivacyExportRequest(input: {
+  organizationId: string;
+  subjectUserId: string;
+  requestedBy?: string;
+}): Promise<{ request: PrivacyRequestRecord; data: Record<string, unknown> }> {
+  const data = await exportUserPrivacyData({
+    organizationId: input.organizationId,
+    userId: input.subjectUserId
+  });
+
+  const rows = await queryOrg<DbPrivacyRequestRow>(
+    input.organizationId,
+    `
+      INSERT INTO privacy_requests (
+        id,
+        organization_id,
+        request_type,
+        subject_user_id,
+        requested_by,
+        status,
+        legal_hold_blocked,
+        result,
+        processed_at,
+        created_by
+      ) VALUES ($1, $2, 'export', $3, $4, 'completed', FALSE, $5::jsonb, NOW(), $4)
+      RETURNING
+        id,
+        organization_id,
+        request_type,
+        subject_user_id,
+        requested_by,
+        status,
+        legal_hold_blocked,
+        result,
+        error_message,
+        created_at,
+        updated_at,
+        processed_at
+    `,
+    [
+      randomUUID(),
+      input.organizationId,
+      input.subjectUserId,
+      input.requestedBy ?? null,
+      JSON.stringify({
+        exportSummary: {
+          sessions: Array.isArray(data.sessions) ? data.sessions.length : 0,
+          chatThreads: Array.isArray(data.chatThreads) ? data.chatThreads.length : 0,
+          chatMessages: Array.isArray(data.chatMessages) ? data.chatMessages.length : 0,
+          sourceIdentities: Array.isArray(data.sourceIdentities) ? data.sourceIdentities.length : 0
+        }
+      })
+    ]
+  );
+
+  return {
+    request: mapPrivacyRequest(rows[0]),
+    data
+  };
+}
+
+export async function createPrivacyDeleteRequest(input: {
+  organizationId: string;
+  subjectUserId: string;
+  requestedBy?: string;
+}): Promise<{
+  request: PrivacyRequestRecord;
+  deleted: boolean;
+  legalHoldBlocked: boolean;
+  deletedCounts: {
+    memberships: number;
+    sessions: number;
+    sourceIdentities: number;
+    chatMessages: number;
+    chatThreads: number;
+    assistantFeedback: number;
+  };
+}> {
+  const legalHoldBlocked = await hasActiveLegalHold({
+    organizationId: input.organizationId,
+    userId: input.subjectUserId
+  });
+
+  if (legalHoldBlocked) {
+    const blockedRows = await queryOrg<DbPrivacyRequestRow>(
+      input.organizationId,
+      `
+        INSERT INTO privacy_requests (
+          id,
+          organization_id,
+          request_type,
+          subject_user_id,
+          requested_by,
+          status,
+          legal_hold_blocked,
+          result,
+          processed_at,
+          created_by
+        ) VALUES ($1, $2, 'delete', $3, $4, 'blocked', TRUE, $5::jsonb, NOW(), $4)
+        RETURNING
+          id,
+          organization_id,
+          request_type,
+          subject_user_id,
+          requested_by,
+          status,
+          legal_hold_blocked,
+          result,
+          error_message,
+          created_at,
+          updated_at,
+          processed_at
+      `,
+      [
+        randomUUID(),
+        input.organizationId,
+        input.subjectUserId,
+        input.requestedBy ?? null,
+        JSON.stringify({
+          reason: "active_legal_hold"
+        })
+      ]
+    );
+
+    return {
+      request: mapPrivacyRequest(blockedRows[0]),
+      deleted: false,
+      legalHoldBlocked: true,
+      deletedCounts: {
+        memberships: 0,
+        sessions: 0,
+        sourceIdentities: 0,
+        chatMessages: 0,
+        chatThreads: 0,
+        assistantFeedback: 0
+      }
+    };
+  }
+
+  const deletedCounts = await withOrgTransaction(input.organizationId, async (client) => {
+    const assistantFeedback = await client.query<{ id: string }>(
+      `
+        DELETE FROM assistant_feedback
+        WHERE organization_id = $1
+          AND created_by = $2
+        RETURNING id
+      `,
+      [input.organizationId, input.subjectUserId]
+    );
+
+    const chatMessages = await client.query<{ id: string }>(
+      `
+        DELETE FROM chat_messages
+        WHERE organization_id = $1
+          AND created_by = $2
+        RETURNING id
+      `,
+      [input.organizationId, input.subjectUserId]
+    );
+
+    const chatThreads = await client.query<{ id: string }>(
+      `
+        DELETE FROM chat_threads ct
+        WHERE ct.organization_id = $1
+          AND ct.created_by = $2
+          AND NOT EXISTS (
+            SELECT 1
+            FROM chat_messages cm
+            WHERE cm.organization_id = ct.organization_id
+              AND cm.thread_id = ct.id
+          )
+        RETURNING ct.id
+      `,
+      [input.organizationId, input.subjectUserId]
+    );
+
+    const sourceIdentities = await client.query<{ id: string }>(
+      `
+        DELETE FROM user_source_identities
+        WHERE organization_id = $1
+          AND user_id = $2
+        RETURNING id
+      `,
+      [input.organizationId, input.subjectUserId]
+    );
+
+    const sessions = await client.query<{ id: string }>(
+      `
+        DELETE FROM user_sessions
+        WHERE organization_id = $1
+          AND user_id = $2
+        RETURNING id
+      `,
+      [input.organizationId, input.subjectUserId]
+    );
+
+    const memberships = await client.query<{ id: string }>(
+      `
+        DELETE FROM memberships
+        WHERE organization_id = $1
+          AND user_id = $2
+        RETURNING id
+      `,
+      [input.organizationId, input.subjectUserId]
+    );
+
+    await client.query(
+      `
+        UPDATE users
+        SET
+          email = CONCAT('deleted+', id, '@redacted.local'),
+          display_name = NULL,
+          updated_at = NOW()
+        WHERE id = $1
+          AND NOT EXISTS (
+            SELECT 1
+            FROM memberships
+            WHERE user_id = $1
+          )
+      `,
+      [input.subjectUserId]
+    );
+
+    return {
+      memberships: memberships.rows.length,
+      sessions: sessions.rows.length,
+      sourceIdentities: sourceIdentities.rows.length,
+      chatMessages: chatMessages.rows.length,
+      chatThreads: chatThreads.rows.length,
+      assistantFeedback: assistantFeedback.rows.length
+    };
+  });
+
+  const requestRows = await queryOrg<DbPrivacyRequestRow>(
+    input.organizationId,
+    `
+      INSERT INTO privacy_requests (
+        id,
+        organization_id,
+        request_type,
+        subject_user_id,
+        requested_by,
+        status,
+        legal_hold_blocked,
+        result,
+        processed_at,
+        created_by
+      ) VALUES ($1, $2, 'delete', $3, $4, 'completed', FALSE, $5::jsonb, NOW(), $4)
+      RETURNING
+        id,
+        organization_id,
+        request_type,
+        subject_user_id,
+        requested_by,
+        status,
+        legal_hold_blocked,
+        result,
+        error_message,
+        created_at,
+        updated_at,
+        processed_at
+    `,
+    [
+      randomUUID(),
+      input.organizationId,
+      input.subjectUserId,
+      input.requestedBy ?? null,
+      JSON.stringify({
+        deletedCounts
+      })
+    ]
+  );
+
+  return {
+    request: mapPrivacyRequest(requestRows[0]),
+    deleted: true,
+    legalHoldBlocked: false,
+    deletedCounts
+  };
+}
+
+export async function listPrivacyRequests(input: {
+  organizationId: string;
+  limit?: number;
+}): Promise<PrivacyRequestRecord[]> {
+  const rows = await queryOrg<DbPrivacyRequestRow>(
+    input.organizationId,
+    `
+      SELECT
+        id,
+        organization_id,
+        request_type,
+        subject_user_id,
+        requested_by,
+        status,
+        legal_hold_blocked,
+        result,
+        error_message,
+        created_at,
+        updated_at,
+        processed_at
+      FROM privacy_requests
+      WHERE organization_id = $1
+      ORDER BY created_at DESC
+      LIMIT $2
+    `,
+    [input.organizationId, input.limit ?? 50]
+  );
+
+  return rows.map(mapPrivacyRequest);
+}
+
+export async function getCompliancePostureSummary(input: {
+  organizationId: string;
+}): Promise<{
+  activeLegalHolds: number;
+  pendingPrivacyRequests: number;
+  completedPrivacyRequestsLast30d: number;
+}> {
+  const [holds, requests] = await Promise.all([
+    queryOrg<{ count: string }>(
+      input.organizationId,
+      `
+        SELECT COUNT(*)::text AS count
+        FROM legal_holds
+        WHERE organization_id = $1
+          AND active = TRUE
+      `,
+      [input.organizationId]
+    ),
+    queryOrg<{ pending: string; completed: string }>(
+      input.organizationId,
+      `
+        SELECT
+          COUNT(*) FILTER (WHERE status IN ('requested', 'processing'))::text AS pending,
+          COUNT(*) FILTER (
+            WHERE status = 'completed'
+              AND created_at >= NOW() - INTERVAL '30 days'
+          )::text AS completed
+        FROM privacy_requests
+        WHERE organization_id = $1
+      `,
+      [input.organizationId]
+    )
+  ]);
+
+  return {
+    activeLegalHolds: Number(holds[0]?.count ?? 0),
+    pendingPrivacyRequests: Number(requests[0]?.pending ?? 0),
+    completedPrivacyRequestsLast30d: Number(requests[0]?.completed ?? 0)
+  };
+}
+
+export async function cleanupPrivacyRetention(input?: {
+  retentionDays?: number;
+  maxRowsPerTable?: number;
+}): Promise<{
+  assistantFeedbackDeleted: number;
+  chatMessagesDeleted: number;
+  chatThreadsDeleted: number;
+  privacyRequestsDeleted: number;
+}> {
+  const retentionDays = Math.max(1, input?.retentionDays ?? 90);
+  const maxRows = Math.max(100, input?.maxRowsPerTable ?? 5000);
+  const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
+
+  const [assistantFeedbackRows, chatMessageRows, chatThreadRows, privacyRequestRows] = await Promise.all([
+    querySystem<{ id: string }>(
+      `
+        DELETE FROM assistant_feedback af
+        WHERE af.id IN (
+          SELECT af_inner.id
+          FROM assistant_feedback af_inner
+          WHERE af_inner.created_at < $1::timestamptz
+            AND NOT EXISTS (
+              SELECT 1
+              FROM legal_holds lh
+              WHERE lh.organization_id = af_inner.organization_id
+                AND lh.active = TRUE
+                AND (
+                  lh.scope = 'organization'
+                  OR (lh.scope = 'user' AND lh.user_id = af_inner.created_by)
+                )
+            )
+          ORDER BY af_inner.created_at ASC
+          LIMIT $2
+        )
+        RETURNING af.id
+      `,
+      [cutoff, maxRows]
+    ),
+    querySystem<{ id: string }>(
+      `
+        DELETE FROM chat_messages cm
+        WHERE cm.id IN (
+          SELECT cm_inner.id
+          FROM chat_messages cm_inner
+          WHERE cm_inner.created_at < $1::timestamptz
+            AND NOT EXISTS (
+              SELECT 1
+              FROM legal_holds lh
+              WHERE lh.organization_id = cm_inner.organization_id
+                AND lh.active = TRUE
+                AND (
+                  lh.scope = 'organization'
+                  OR (lh.scope = 'user' AND lh.user_id = cm_inner.created_by)
+                )
+            )
+          ORDER BY cm_inner.created_at ASC
+          LIMIT $2
+        )
+        RETURNING cm.id
+      `,
+      [cutoff, maxRows]
+    ),
+    querySystem<{ id: string }>(
+      `
+        DELETE FROM chat_threads ct
+        WHERE ct.id IN (
+          SELECT ct_inner.id
+          FROM chat_threads ct_inner
+          WHERE ct_inner.updated_at < $1::timestamptz
+            AND NOT EXISTS (
+              SELECT 1
+              FROM chat_messages cm
+              WHERE cm.organization_id = ct_inner.organization_id
+                AND cm.thread_id = ct_inner.id
+            )
+          ORDER BY ct_inner.updated_at ASC
+          LIMIT $2
+        )
+        RETURNING ct.id
+      `,
+      [cutoff, maxRows]
+    ),
+    querySystem<{ id: string }>(
+      `
+        DELETE FROM privacy_requests pr
+        WHERE pr.id IN (
+          SELECT pr_inner.id
+          FROM privacy_requests pr_inner
+          WHERE pr_inner.created_at < $1::timestamptz
+            AND pr_inner.status IN ('completed', 'failed', 'blocked')
+          ORDER BY pr_inner.created_at ASC
+          LIMIT $2
+        )
+        RETURNING pr.id
+      `,
+      [cutoff, maxRows]
+    )
+  ]);
+
+  return {
+    assistantFeedbackDeleted: assistantFeedbackRows.length,
+    chatMessagesDeleted: chatMessageRows.length,
+    chatThreadsDeleted: chatThreadRows.length,
+    privacyRequestsDeleted: privacyRequestRows.length
+  };
 }
 
 export async function createMembership(input: {
@@ -4259,7 +4957,7 @@ export async function createMembership(input: {
 }
 
 export async function getUserByEmail(email: string): Promise<{ id: string; email: string } | null> {
-  const rows = await query<{ id: string; email: string }>(
+  const rows = await querySystem<{ id: string; email: string }>(
     `
       SELECT id, email
       FROM users
@@ -4317,7 +5015,7 @@ export async function ensureOrganization(input: {
   slug: string;
   createdBy?: string;
 }): Promise<void> {
-  await query(
+  await querySystem(
     `
       INSERT INTO organizations (id, name, slug, created_by)
       VALUES ($1, $2, $3, $4)
@@ -4329,7 +5027,7 @@ export async function ensureOrganization(input: {
 }
 
 export async function listOrganizationIds(limit = 1000): Promise<string[]> {
-  const rows = await query<{ id: string }>(
+  const rows = await querySystem<{ id: string }>(
     `
       SELECT id
       FROM organizations
@@ -4347,7 +5045,7 @@ export async function createOrUpdateUser(input: {
   email: string;
   displayName?: string;
 }): Promise<void> {
-  await query(
+  await querySystem(
     `
       INSERT INTO users (id, email, display_name)
       VALUES ($1, $2, $3)
@@ -4378,26 +5076,35 @@ export async function createUserSession(input: {
   userId: string;
   organizationId: string;
   expiresAt: string;
+  issuedAt?: string;
+  lastSeenAt?: string;
   createdBy?: string;
   metadata?: Record<string, unknown>;
 }): Promise<UserSessionRecord> {
-  const rows = await query<DbUserSessionRow>(
+  const rows = await queryOrg<DbUserSessionRow>(
+    input.organizationId,
     `
       INSERT INTO user_sessions (
         id,
         user_id,
         organization_id,
+        issued_at,
+        last_seen_at,
         expires_at,
         revoked_at,
+        revoked_reason,
         metadata,
         created_by
-      ) VALUES ($1, $2, $3, $4, NULL, $5::jsonb, $6)
+      ) VALUES ($1, $2, $3, $4, $5, $6, NULL, NULL, $7::jsonb, $8)
       RETURNING
         id,
         user_id,
         organization_id,
+        issued_at,
+        last_seen_at,
         expires_at,
         revoked_at,
+        revoked_reason,
         metadata,
         created_at,
         updated_at
@@ -4406,6 +5113,8 @@ export async function createUserSession(input: {
       randomUUID(),
       input.userId,
       input.organizationId,
+      input.issuedAt ?? nowIso(),
+      input.lastSeenAt ?? nowIso(),
       input.expiresAt,
       JSON.stringify(input.metadata ?? {}),
       input.createdBy ?? input.userId
@@ -4416,14 +5125,17 @@ export async function createUserSession(input: {
 }
 
 export async function getUserSession(sessionId: string): Promise<UserSessionRecord | null> {
-  const rows = await query<DbUserSessionRow>(
+  const rows = await querySystem<DbUserSessionRow>(
     `
       SELECT
         id,
         user_id,
         organization_id,
+        issued_at,
+        last_seen_at,
         expires_at,
         revoked_at,
+        revoked_reason,
         metadata,
         created_at,
         updated_at
@@ -4438,14 +5150,17 @@ export async function getUserSession(sessionId: string): Promise<UserSessionReco
 }
 
 export async function getActiveUserSession(sessionId: string): Promise<UserSessionRecord | null> {
-  const rows = await query<DbUserSessionRow>(
+  const rows = await querySystem<DbUserSessionRow>(
     `
       SELECT
         id,
         user_id,
         organization_id,
+        issued_at,
+        last_seen_at,
         expires_at,
         revoked_at,
+        revoked_reason,
         metadata,
         created_at,
         updated_at
@@ -4461,19 +5176,93 @@ export async function getActiveUserSession(sessionId: string): Promise<UserSessi
   return rows[0] ? mapUserSession(rows[0]) : null;
 }
 
-export async function revokeUserSession(sessionId: string): Promise<boolean> {
-  const rows = await query<{ id: string }>(
+export async function revokeUserSession(sessionId: string, reason?: string): Promise<boolean> {
+  const rows = await querySystem<{ id: string }>(
     `
       UPDATE user_sessions
-      SET revoked_at = NOW(), updated_at = NOW()
+      SET revoked_at = NOW(),
+          revoked_reason = COALESCE($2, revoked_reason, 'manual_revoke'),
+          updated_at = NOW()
       WHERE id = $1
         AND revoked_at IS NULL
       RETURNING id
     `,
-    [sessionId]
+    [sessionId, reason ?? null]
   );
 
   return rows.length > 0;
+}
+
+export async function touchUserSessionLastSeen(
+  sessionId: string,
+  seenAt?: string
+): Promise<boolean> {
+  const rows = await querySystem<{ id: string }>(
+    `
+      UPDATE user_sessions
+      SET last_seen_at = $2::timestamptz, updated_at = NOW()
+      WHERE id = $1
+        AND revoked_at IS NULL
+      RETURNING id
+    `,
+    [sessionId, seenAt ?? nowIso()]
+  );
+
+  return rows.length > 0;
+}
+
+export async function countActiveUserSessions(input: {
+  organizationId: string;
+  userId: string;
+}): Promise<number> {
+  const rows = await queryOrg<{ count: string }>(
+    input.organizationId,
+    `
+      SELECT COUNT(*)::text AS count
+      FROM user_sessions
+      WHERE organization_id = $1
+        AND user_id = $2
+        AND revoked_at IS NULL
+        AND expires_at > NOW()
+    `,
+    [input.organizationId, input.userId]
+  );
+
+  return Number(rows[0]?.count ?? 0);
+}
+
+export async function revokeOldestSessionsOverLimit(input: {
+  organizationId: string;
+  userId: string;
+  keepLimit: number;
+  reason?: string;
+}): Promise<number> {
+  const rows = await queryOrg<{ id: string }>(
+    input.organizationId,
+    `
+      WITH ranked AS (
+        SELECT
+          id,
+          ROW_NUMBER() OVER (ORDER BY COALESCE(last_seen_at, issued_at, created_at) DESC) AS rn
+        FROM user_sessions
+        WHERE organization_id = $1
+          AND user_id = $2
+          AND revoked_at IS NULL
+          AND expires_at > NOW()
+      )
+      UPDATE user_sessions us
+      SET revoked_at = NOW(),
+          revoked_reason = COALESCE($4, 'concurrent_session_limit'),
+          updated_at = NOW()
+      FROM ranked
+      WHERE us.id = ranked.id
+        AND ranked.rn > $3
+      RETURNING us.id
+    `,
+    [input.organizationId, input.userId, Math.max(1, input.keepLimit), input.reason ?? null]
+  );
+
+  return rows.length;
 }
 
 export async function listOrganizationDomains(organizationId: string): Promise<OrganizationDomainRecord[]> {
@@ -4546,7 +5335,7 @@ export async function deleteOrganizationDomain(organizationId: string, domainId:
 
 export async function getRegistrationInviteByCode(code: string): Promise<RegistrationInviteRecord | null> {
   const codeHash = hashInviteCode(code);
-  const rows = await query<DbRegistrationInviteRow>(
+  const rows = await querySystem<DbRegistrationInviteRow>(
     `
       SELECT
         id,
@@ -4715,7 +5504,7 @@ export async function checkAndIncrementApiRateLimit(input: {
   const nowMs = input.nowMs ?? Date.now();
   const windowStart = toWindowStart(nowMs, input.windowMs);
 
-  const rows = await query<{ bucket_key: string; window_start: string; count: number }>(
+  const rows = await querySystem<{ bucket_key: string; window_start: string; count: number }>(
     `
       INSERT INTO api_rate_limits (bucket_key, window_start, count, created_at, updated_at)
       VALUES ($1, $2::timestamptz, 1, NOW(), NOW())

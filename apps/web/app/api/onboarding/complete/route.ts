@@ -5,9 +5,10 @@ import {
   listConnectorAccounts,
   markUserOnboardingCompleted
 } from "@internalwiki/db";
-import { jsonOk } from "@/lib/api";
+import { jsonOk, rateLimitError } from "@/lib/api";
 import { requireSessionContext } from "@/lib/api-auth";
 import { writeAuditEvent } from "@/lib/audit";
+import { checkRateLimit } from "@/lib/rate-limit";
 import { resolveRequestId, withRequestId } from "@/lib/request-id";
 import { enforceMutationSecurity } from "@/lib/security";
 
@@ -33,6 +34,15 @@ export async function POST(request: Request): Promise<Response> {
     return sessionResult;
   }
   const session = sessionResult;
+
+  const rate = await checkRateLimit({
+    key: `${session.organizationId}:${session.userId}:onboarding_complete`,
+    windowMs: 60_000,
+    maxRequests: 30
+  });
+  if (!rate.allowed) {
+    return rateLimitError({ retryAfterMs: rate.retryAfterMs, requestId });
+  }
 
   const [connectors, documentCount, latestThread, completedBefore] = await Promise.all([
     listConnectorAccounts(session.organizationId),

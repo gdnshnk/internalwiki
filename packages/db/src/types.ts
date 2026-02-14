@@ -129,7 +129,10 @@ export type UserSessionRecord = {
   userId: string;
   organizationId: string;
   expiresAt: string;
+  issuedAt: string;
+  lastSeenAt: string;
   revokedAt?: string;
+  revokedReason?: string;
   metadata?: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
@@ -217,3 +220,18 @@ export type AuditExportJobRecord = AuditExportJob;
 export type IncidentSummaryRecord = IncidentSummary;
 
 export type SloSummaryRecord = SloSummary;
+
+export type PrivacyRequestRecord = {
+  id: string;
+  organizationId: string;
+  requestType: "export" | "delete";
+  subjectUserId: string;
+  requestedBy?: string;
+  status: "requested" | "processing" | "completed" | "blocked" | "failed";
+  legalHoldBlocked: boolean;
+  result: Record<string, unknown>;
+  errorMessage?: string;
+  createdAt: string;
+  updatedAt: string;
+  processedAt?: string;
+};

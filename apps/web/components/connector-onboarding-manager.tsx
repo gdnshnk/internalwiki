@@ -415,9 +415,6 @@ export function ConnectorOnboardingManager(props: {
           </button>
         </div>
 
-        <p className="surface-sub" style={{ marginTop: "0.75rem" }}>
-          Notion is deprecated now and will be fully sunset 60 days after deprecation release.
-        </p>
       </section>
 
       {connectedFromOauth ? (

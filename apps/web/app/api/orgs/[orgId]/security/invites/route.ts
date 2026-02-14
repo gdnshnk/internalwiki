@@ -8,6 +8,7 @@ import { assertScopedOrgAccess } from "@/lib/organization";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { resolveRequestId, withRequestId } from "@/lib/request-id";
 import { enforceMutationSecurity } from "@/lib/security";
+import { beginIdempotentMutation, finalizeIdempotentMutation } from "@/lib/idempotency";
 
 const createInviteSchema = z
   .object({
@@ -87,6 +88,17 @@ export async function POST(
     return jsonError(parsed.error.message, 422, withRequestId(requestId));
   }
 
+  const idempotency = await beginIdempotentMutation({
+    request,
+    requestId,
+    organizationId: orgId,
+    actorId: session.userId,
+    payload: parsed.data
+  });
+  if ("response" in idempotency) {
+    return idempotency.response;
+  }
+
   const code = generateInviteCode();
   const invite = await createRegistrationInvite({
     organizationId: orgId,
@@ -112,11 +124,18 @@ export async function POST(
     }
   });
 
-  return jsonOk(
-    {
-      invite,
-      inviteCode: code
-    },
-    withRequestId(requestId)
-  );
+  const responsePayload = {
+    invite,
+    inviteCode: code
+  };
+  await finalizeIdempotentMutation({
+    keyHash: idempotency.keyHash,
+    organizationId: orgId,
+    method: idempotency.method,
+    path: idempotency.path,
+    status: 200,
+    responseBody: responsePayload
+  });
+
+  return jsonOk(responsePayload, withRequestId(requestId));
 }

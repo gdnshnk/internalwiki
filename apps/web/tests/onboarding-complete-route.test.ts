@@ -8,7 +8,8 @@ const {
   listChatThreadsMock,
   getUserOnboardingCompletedAtMock,
   markUserOnboardingCompletedMock,
-  writeAuditEventMock
+  writeAuditEventMock,
+  checkRateLimitMock
 } = vi.hoisted(() => ({
   enforceMutationSecurityMock: vi.fn(),
   requireSessionContextMock: vi.fn(),
@@ -17,7 +18,8 @@ const {
   listChatThreadsMock: vi.fn(),
   getUserOnboardingCompletedAtMock: vi.fn(),
   markUserOnboardingCompletedMock: vi.fn(),
-  writeAuditEventMock: vi.fn()
+  writeAuditEventMock: vi.fn(),
+  checkRateLimitMock: vi.fn()
 }));
 
 vi.mock("@/lib/security", () => ({
@@ -30,6 +32,10 @@ vi.mock("@/lib/api-auth", () => ({
 
 vi.mock("@/lib/audit", () => ({
   writeAuditEvent: writeAuditEventMock
+}));
+
+vi.mock("@/lib/rate-limit", () => ({
+  checkRateLimit: checkRateLimitMock
 }));
 
 vi.mock("@internalwiki/db", () => ({
@@ -53,6 +59,7 @@ describe("onboarding completion route", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     enforceMutationSecurityMock.mockReturnValue(null);
+    checkRateLimitMock.mockResolvedValue({ allowed: true, retryAfterMs: 0 });
   });
 
   it("returns 401 when session is missing", async () => {

@@ -1,6 +1,12 @@
 import { cookies, headers } from "next/headers";
 import type { OrgRole } from "@internalwiki/core";
-import { getActiveUserSession, resolveMembership } from "@internalwiki/db";
+import {
+  getActiveUserSession,
+  getOrCreateSessionPolicy,
+  resolveMembership,
+  revokeUserSession,
+  touchUserSessionLastSeen
+} from "@internalwiki/db";
 import { safeInfo } from "@/lib/safe-log";
 import { requestClientMetadataFromHeaders } from "@/lib/security";
 import { parseSessionCookieValue } from "@/lib/session-cookie";
@@ -40,6 +46,39 @@ export async function getSessionContextOptional(): Promise<SessionContext | null
       });
 
       if (membership) {
+        const policy = await getOrCreateSessionPolicy(userSession.organizationId);
+        const nowMs = Date.now();
+        const lastSeenMs = Date.parse(userSession.lastSeenAt);
+        const issuedAtMs = Date.parse(userSession.issuedAt);
+        const idleTimeoutMs = policy.sessionIdleTimeoutMinutes * 60 * 1000;
+        const forceReauthMs = policy.forceReauthAfterMinutes * 60 * 1000;
+
+        if (Number.isFinite(lastSeenMs) && nowMs - lastSeenMs > idleTimeoutMs) {
+          await revokeUserSession(userSession.id, "idle_timeout");
+          safeInfo("auth.session.revoked", {
+            sessionId: userSession.id,
+            userId: userSession.userId,
+            organizationId: userSession.organizationId,
+            reason: "idle_timeout"
+          });
+          return null;
+        }
+
+        if (Number.isFinite(issuedAtMs) && nowMs - issuedAtMs > forceReauthMs) {
+          await revokeUserSession(userSession.id, "force_reauth");
+          safeInfo("auth.session.revoked", {
+            sessionId: userSession.id,
+            userId: userSession.userId,
+            organizationId: userSession.organizationId,
+            reason: "force_reauth"
+          });
+          return null;
+        }
+
+        if (!Number.isFinite(lastSeenMs) || nowMs - lastSeenMs > 60_000) {
+          await touchUserSessionLastSeen(userSession.id, new Date(nowMs).toISOString());
+        }
+
         const headerStore = await headers();
         const currentMetadata = requestClientMetadataFromHeaders(headerStore) as {
           ipAddress?: string | null;

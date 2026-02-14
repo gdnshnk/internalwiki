@@ -7,6 +7,7 @@ import { maintenanceAuthCleanup } from "./tasks/maintenanceAuthCleanup";
 import { auditExportGenerate } from "./tasks/auditExportGenerate";
 import { incidentRollup } from "./tasks/incidentRollup";
 import { retryStuckSync } from "./tasks/retryStuckSync";
+import { privacyRetentionCleanup } from "./tasks/privacyRetentionCleanup";
 
 const taskList: TaskList = {
   "schedule-connector-syncs": async (payload, helpers) => {
@@ -32,6 +33,9 @@ const taskList: TaskList = {
   },
   "retry-stuck-sync": async (payload, helpers) => {
     await retryStuckSync(payload as Record<string, never>, helpers);
+  },
+  "privacy-retention-cleanup": async (payload, helpers) => {
+    await privacyRetentionCleanup(payload as Record<string, never>, helpers);
   }
 };
 
@@ -51,6 +55,7 @@ async function main(): Promise<void> {
 */30 * * * * incident-rollup {}
 */10 * * * * retry-stuck-sync {}
 0 * * * * maintenance-auth-cleanup {}
+0 1 * * * privacy-retention-cleanup {}
 `
   });
 

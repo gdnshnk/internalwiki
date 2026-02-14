@@ -6,6 +6,7 @@ import { assertScopedOrgAccess } from "@/lib/organization";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { resolveRequestId, withRequestId } from "@/lib/request-id";
 import { enforceMutationSecurity } from "@/lib/security";
+import { beginIdempotentMutation, finalizeIdempotentMutation } from "@/lib/idempotency";
 
 export async function DELETE(
   request: Request,
@@ -39,8 +40,27 @@ export async function DELETE(
     return rateLimitError({ retryAfterMs: rate.retryAfterMs, requestId });
   }
 
+  const idempotency = await beginIdempotentMutation({
+    request,
+    requestId,
+    organizationId: orgId,
+    actorId: session.userId,
+    payload: { domainId }
+  });
+  if ("response" in idempotency) {
+    return idempotency.response;
+  }
+
   const deleted = await deleteOrganizationDomain(orgId, domainId);
   if (!deleted) {
+    await finalizeIdempotentMutation({
+      keyHash: idempotency.keyHash,
+      organizationId: orgId,
+      method: idempotency.method,
+      path: idempotency.path,
+      status: 404,
+      responseBody: { error: "Domain not found" }
+    });
     return jsonError("Domain not found", 404, withRequestId(requestId));
   }
 
@@ -53,5 +73,15 @@ export async function DELETE(
     payload: {}
   });
 
-  return jsonOk({ deleted: true }, withRequestId(requestId));
+  const responsePayload = { deleted: true };
+  await finalizeIdempotentMutation({
+    keyHash: idempotency.keyHash,
+    organizationId: orgId,
+    method: idempotency.method,
+    path: idempotency.path,
+    status: 200,
+    responseBody: responsePayload
+  });
+
+  return jsonOk(responsePayload, withRequestId(requestId));
 }

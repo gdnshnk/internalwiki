@@ -1,27 +1,26 @@
 import { z } from "zod";
-import { updateRegistrationInvite } from "@internalwiki/db";
+import {
+  createPrivacyDeleteRequest,
+  getUserByEmail,
+  resolveMembership
+} from "@internalwiki/db";
 import { jsonError, jsonOk, rateLimitError } from "@/lib/api";
 import { requireSessionContext } from "@/lib/api-auth";
 import { writeAuditEvent } from "@/lib/audit";
+import { beginIdempotentMutation, finalizeIdempotentMutation } from "@/lib/idempotency";
 import { assertScopedOrgAccess } from "@/lib/organization";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { resolveRequestId, withRequestId } from "@/lib/request-id";
 import { enforceMutationSecurity } from "@/lib/security";
-import { beginIdempotentMutation, finalizeIdempotentMutation } from "@/lib/idempotency";
 
-const patchInviteSchema = z
-  .object({
-    revoke: z.boolean().optional(),
-    expiresAt: z.string().datetime().optional(),
-    expiresInHours: z.number().int().min(1).max(24 * 90).optional()
-  })
-  .refine((input) => input.revoke || input.expiresAt || input.expiresInHours, {
-    message: "Specify revoke and/or new expiry."
-  });
+const dsrDeleteSchema = z.object({
+  userId: z.string().min(2).optional(),
+  email: z.string().email().optional()
+});
 
-export async function PATCH(
+export async function POST(
   request: Request,
-  context: { params: Promise<{ orgId: string; inviteId: string }> }
+  context: { params: Promise<{ orgId: string }> }
 ): Promise<Response> {
   const requestId = resolveRequestId(request);
   const securityError = enforceMutationSecurity(request);
@@ -29,7 +28,7 @@ export async function PATCH(
     return securityError;
   }
 
-  const { orgId, inviteId } = await context.params;
+  const { orgId } = await context.params;
   const sessionResult = await requireSessionContext(requestId);
   if (sessionResult instanceof Response) {
     return sessionResult;
@@ -43,17 +42,34 @@ export async function PATCH(
   }
 
   const rate = await checkRateLimit({
-    key: `${session.organizationId}:${session.userId}:security_invite_patch`,
+    key: `${session.organizationId}:${session.userId}:privacy_dsr_delete`,
     windowMs: 60_000,
-    maxRequests: 30
+    maxRequests: 8
   });
   if (!rate.allowed) {
     return rateLimitError({ retryAfterMs: rate.retryAfterMs, requestId });
   }
 
-  const parsed = patchInviteSchema.safeParse(await request.json().catch(() => ({})));
+  const parsed = dsrDeleteSchema.safeParse(await request.json().catch(() => ({})));
   if (!parsed.success) {
     return jsonError(parsed.error.message, 422, withRequestId(requestId));
+  }
+
+  let subjectUserId = parsed.data.userId ?? session.userId;
+  if (!parsed.data.userId && parsed.data.email) {
+    const user = await getUserByEmail(parsed.data.email.trim().toLowerCase());
+    if (!user) {
+      return jsonError("User not found", 404, withRequestId(requestId));
+    }
+    subjectUserId = user.id;
+  }
+
+  const membership = await resolveMembership({
+    userId: subjectUserId,
+    organizationId: orgId
+  });
+  if (!membership) {
+    return jsonError("User is not a member of this organization", 404, withRequestId(requestId));
   }
 
   const idempotency = await beginIdempotentMutation({
@@ -61,47 +77,40 @@ export async function PATCH(
     requestId,
     organizationId: orgId,
     actorId: session.userId,
-    payload: parsed.data
+    payload: {
+      subjectUserId
+    }
   });
   if ("response" in idempotency) {
     return idempotency.response;
   }
 
-  const expiresAt =
-    parsed.data.expiresAt ??
-    (parsed.data.expiresInHours
-      ? new Date(Date.now() + parsed.data.expiresInHours * 60 * 60 * 1000).toISOString()
-      : undefined);
-
-  const invite = await updateRegistrationInvite(orgId, inviteId, {
-    expiresAt,
-    revokedAt: parsed.data.revoke ? new Date().toISOString() : undefined
+  const deleteResult = await createPrivacyDeleteRequest({
+    organizationId: orgId,
+    subjectUserId,
+    requestedBy: session.userId
   });
-  if (!invite) {
-    await finalizeIdempotentMutation({
-      keyHash: idempotency.keyHash,
-      organizationId: orgId,
-      method: idempotency.method,
-      path: idempotency.path,
-      status: 404,
-      responseBody: { error: "Invite not found" }
-    });
-    return jsonError("Invite not found", 404, withRequestId(requestId));
-  }
 
   await writeAuditEvent({
     organizationId: orgId,
     actorId: session.userId,
-    eventType: "security.invite.updated",
-    entityType: "registration_invite",
-    entityId: inviteId,
+    eventType: "security.privacy.dsr_delete",
+    entityType: "privacy_request",
+    entityId: deleteResult.request.id,
     payload: {
-      revoke: parsed.data.revoke ?? false,
-      expiresAt: expiresAt ?? null
+      subjectUserId,
+      status: deleteResult.request.status,
+      legalHoldBlocked: deleteResult.legalHoldBlocked,
+      deleted: deleteResult.deleted
     }
   });
 
-  const responsePayload = { invite };
+  const responsePayload = {
+    request: deleteResult.request,
+    deleted: deleteResult.deleted,
+    legalHoldBlocked: deleteResult.legalHoldBlocked,
+    deletedCounts: deleteResult.deletedCounts
+  };
   await finalizeIdempotentMutation({
     keyHash: idempotency.keyHash,
     organizationId: orgId,
@@ -113,3 +122,4 @@ export async function PATCH(
 
   return jsonOk(responsePayload, withRequestId(requestId));
 }
+

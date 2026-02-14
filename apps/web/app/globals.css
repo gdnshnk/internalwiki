@@ -509,6 +509,14 @@ a:focus-visible {
   background: color-mix(in oklab, var(--accent) 15%, transparent);
 }
 
+.setup-permissions-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  line-height: 1;
+}
+
 .ask-submit {
   border: 1px solid color-mix(in oklab, var(--accent) 58%, var(--border));
   border-radius: 999px;
