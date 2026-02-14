@@ -28,7 +28,7 @@ export default async function LoginPage({
   const defaultIntent = resolvedSearch.intent === "register" ? "register" : "login";
 
   return (
-    <main className="page-wrap" style={{ width: "min(900px, calc(100% - 2rem))", margin: "2rem auto" }}>
+    <main className="auth-page">
       <AuthLoginActions
         nextPath={nextPath}
         showDevBootstrap={isDev}
@@ -40,7 +40,7 @@ export default async function LoginPage({
       />
 
       {missing.length > 0 ? (
-        <section className="surface-card">
+        <section className="surface-card auth-setup-card">
           <p className="workspace-header__eyebrow">Setup required</p>
           <h2 className="surface-title">Local environment checklist</h2>
           <p className="surface-sub">
@@ -48,7 +48,7 @@ export default async function LoginPage({
             server.
           </p>
 
-          <div className="data-grid" style={{ marginTop: "0.8rem" }}>
+          <div className="data-grid auth-setup-grid">
             {requiredEnvKeys.map((envKey) => (
               <div key={envKey} className="data-pill">
                 {missing.includes(envKey) ? "Missing" : "Configured"}: <code>{envKey}</code>
@@ -61,18 +61,7 @@ export default async function LoginPage({
             ))}
           </div>
 
-          <pre
-            style={{
-              marginTop: "0.9rem",
-              padding: "0.8rem",
-              borderRadius: "12px",
-              border: "1px solid var(--border)",
-              background: "var(--surface-muted)",
-              overflowX: "auto",
-              fontFamily: "var(--font-mono)",
-              fontSize: "0.78rem"
-            }}
-          >
+          <pre className="auth-setup-command">
 {`cp .env.example .env
 npm run db:migrate
 npm run dev:web`}

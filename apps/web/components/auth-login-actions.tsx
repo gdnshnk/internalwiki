@@ -45,6 +45,11 @@ export function AuthLoginActions(props: {
   const [error, setError] = useState<string | null>(null);
 
   const derivedError = useMemo(() => errorMessage(props.authErrorCode), [props.authErrorCode]);
+  const panelTitle = intent === "login" ? "Sign in to InternalWiki" : "Create your workspace account";
+  const panelSubtitle =
+    intent === "login"
+      ? "Use your work email and password, or continue with Google SSO."
+      : "Create a secure account using your company email, then connect your sources.";
 
   async function startGoogleOAuth(): Promise<void> {
     if (busy) {
@@ -186,144 +191,175 @@ export function AuthLoginActions(props: {
   }
 
   return (
-    <section className="surface-card">
-      <p className="workspace-header__eyebrow">Authentication</p>
-      <h1 className="surface-title">Login required</h1>
-      <p className="surface-sub">
-        Sign in to access your InternalWiki assistant workspace. If you were redirected from `/app`, the app is
-        running; sign in or bootstrap a local session.
-      </p>
+    <section className="auth-shell">
+      <aside className="auth-shell__intro">
+        <p className="auth-shell__eyebrow">Authentication</p>
+        <h1 className="auth-shell__title">Secure, permission-aware access</h1>
+        <p className="auth-shell__subtitle">
+          InternalWiki signs in with work identity, enforces organization boundaries, and returns citation-backed
+          summaries from approved sources.
+        </p>
 
-      <div className="auth-tabs" role="tablist" aria-label="Authentication intent">
-        <button
-          type="button"
-          role="tab"
-          aria-selected={intent === "login"}
-          className={`mode-chip ${intent === "login" ? "mode-chip--active" : ""}`}
-          onClick={() => setIntent("login")}
-        >
-          Login
-        </button>
-        <button
-          type="button"
-          role="tab"
-          aria-selected={intent === "register"}
-          className={`mode-chip ${intent === "register" ? "mode-chip--active" : ""}`}
-          onClick={() => setIntent("register")}
-        >
-          Register
-        </button>
-      </div>
+        <div className="auth-status-grid" aria-label="Authentication method status">
+          <div className="auth-status-pill">
+            <span>Password auth</span>
+            <strong>{props.canUsePassword ? "Ready" : "Setup required"}</strong>
+          </div>
+          <div className="auth-status-pill">
+            <span>Google SSO</span>
+            <strong>{props.canUseGoogle ? "Ready" : "Optional setup"}</strong>
+          </div>
+        </div>
 
-      <form className="auth-register-box" onSubmit={(event) => void submitPasswordAuth(event)}>
+        <ul className="auth-feature-list">
+          <li>Work-email only account creation.</li>
+          <li>Session controls and organization policy enforcement.</li>
+          <li>Permission-aware retrieval and citation verification.</li>
+        </ul>
+      </aside>
+
+      <div className="auth-shell__panel">
+        <header className="auth-panel-header">
+          <h2>{panelTitle}</h2>
+          <p>{panelSubtitle}</p>
+        </header>
+
+        <div className="auth-intent-toggle" role="tablist" aria-label="Authentication intent">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={intent === "login"}
+            className={`auth-intent-toggle__button ${intent === "login" ? "is-active" : ""}`}
+            onClick={() => setIntent("login")}
+          >
+            Login
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={intent === "register"}
+            className={`auth-intent-toggle__button ${intent === "register" ? "is-active" : ""}`}
+            onClick={() => setIntent("register")}
+          >
+            Register
+          </button>
+        </div>
+
+        <form className="auth-form" onSubmit={(event) => void submitPasswordAuth(event)}>
+          {intent === "register" ? (
+            <div className="auth-field-row">
+              <div>
+                <label htmlFor="first-name" className="auth-field-label">
+                  First name
+                </label>
+                <input
+                  id="first-name"
+                  value={firstName}
+                  onChange={(event) => setFirstName(event.target.value)}
+                  placeholder="First name"
+                  className="auth-field-input"
+                  autoComplete="given-name"
+                />
+              </div>
+              <div>
+                <label htmlFor="last-name" className="auth-field-label">
+                  Last name
+                </label>
+                <input
+                  id="last-name"
+                  value={lastName}
+                  onChange={(event) => setLastName(event.target.value)}
+                  placeholder="Last name"
+                  className="auth-field-input"
+                  autoComplete="family-name"
+                />
+              </div>
+            </div>
+          ) : null}
+
+          <label htmlFor="work-email" className="auth-field-label">
+            Work email
+          </label>
+          <input
+            id="work-email"
+            value={email}
+            onChange={(event) => setEmail(event.target.value)}
+            placeholder="name@company.com"
+            className="auth-field-input"
+            type="email"
+            autoComplete="email"
+          />
+
+          <label htmlFor="auth-password" className="auth-field-label">
+            Password
+          </label>
+          <input
+            id="auth-password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            placeholder={intent === "register" ? "Create password" : "Enter password"}
+            className="auth-field-input"
+            type="password"
+            autoComplete={intent === "register" ? "new-password" : "current-password"}
+          />
+
+          {intent === "register" ? (
+            <>
+              <label htmlFor="confirm-password" className="auth-field-label">
+                Confirm password
+              </label>
+              <input
+                id="confirm-password"
+                value={confirmPassword}
+                onChange={(event) => setConfirmPassword(event.target.value)}
+                placeholder="Confirm password"
+                className="auth-field-input"
+                type="password"
+                autoComplete="new-password"
+              />
+            </>
+          ) : (
+            <a href="/contact" className="auth-secondary-link">
+              Forgot your password?
+            </a>
+          )}
+
+          <button type="submit" className="auth-primary-button" disabled={!props.canUsePassword || busy !== null}>
+            {busy === "password"
+              ? intent === "register"
+                ? "Creating account..."
+                : "Signing in..."
+              : intent === "register"
+                ? "Create account"
+                : "Sign in"}
+          </button>
+        </form>
+
         {intent === "register" ? (
-          <div className="auth-field-row">
-            <div>
-              <label htmlFor="first-name" className="auth-field-label">
-                First Name
-              </label>
-              <input
-                id="first-name"
-                value={firstName}
-                onChange={(event) => setFirstName(event.target.value)}
-                placeholder="First name"
-                className="auth-field-input"
-                autoComplete="given-name"
-              />
-            </div>
-            <div>
-              <label htmlFor="last-name" className="auth-field-label">
-                Last Name
-              </label>
-              <input
-                id="last-name"
-                value={lastName}
-                onChange={(event) => setLastName(event.target.value)}
-                placeholder="Last name"
-                className="auth-field-input"
-                autoComplete="family-name"
-              />
-            </div>
+          <div className="auth-form auth-form--subtle">
+            <label htmlFor="invite-code" className="auth-field-label">
+              Invite code (optional)
+            </label>
+            <input
+              id="invite-code"
+              value={inviteCode}
+              onChange={(event) => setInviteCode(event.target.value)}
+              placeholder="Use this when joining an existing workspace"
+              className="auth-field-input"
+            />
           </div>
         ) : null}
 
-        <label htmlFor="work-email" className="auth-field-label">
-          Work Email
-        </label>
-        <input
-          id="work-email"
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          placeholder="name@company.com"
-          className="auth-field-input"
-          type="email"
-          autoComplete="email"
-        />
-
-        <label htmlFor="auth-password" className="auth-field-label">
-          Password
-        </label>
-        <input
-          id="auth-password"
-          value={password}
-          onChange={(event) => setPassword(event.target.value)}
-          placeholder={intent === "register" ? "Create password" : "Enter password"}
-          className="auth-field-input"
-          type="password"
-          autoComplete={intent === "register" ? "new-password" : "current-password"}
-        />
-
-        {intent === "register" ? (
-          <>
-            <label htmlFor="confirm-password" className="auth-field-label">
-              Confirm Password
-            </label>
-            <input
-              id="confirm-password"
-              value={confirmPassword}
-              onChange={(event) => setConfirmPassword(event.target.value)}
-              placeholder="Confirm password"
-              className="auth-field-input"
-              type="password"
-              autoComplete="new-password"
-            />
-          </>
-        ) : (
-          <a href="/contact" className="auth-secondary-link">
-            Forgot your password?
-          </a>
-        )}
-
-        <button type="submit" className="ask-submit" disabled={!props.canUsePassword || busy !== null}>
-          {busy === "password"
-            ? intent === "register"
-              ? "Creating account..."
-              : "Signing in..."
-            : intent === "register"
-              ? "Create account"
-              : "Sign in"}
-        </button>
-      </form>
-
-      {intent === "register" ? (
-        <div className="auth-register-box" style={{ marginTop: "0.8rem" }}>
-          <label htmlFor="invite-code" className="auth-field-label">
-            Invite code (optional)
-          </label>
-          <input
-            id="invite-code"
-            value={inviteCode}
-            onChange={(event) => setInviteCode(event.target.value)}
-            placeholder="Use this when joining an existing workspace"
-            className="auth-field-input"
-          />
+        <div className="auth-divider" role="separator" aria-label="Alternative sign in">
+          <span>or continue with</span>
         </div>
-      ) : null}
 
-      <p className="auth-divider">or</p>
-
-      <div className="chip-row">
-        <button type="button" className="ask-submit" disabled={!props.canUseGoogle || busy !== null} onClick={() => void startGoogleOAuth()}>
+        <button
+          type="button"
+          className="auth-oauth-button"
+          disabled={!props.canUseGoogle || busy !== null}
+          onClick={() => void startGoogleOAuth()}
+        >
           {busy === "google"
             ? intent === "register"
               ? "Starting registration..."
@@ -332,41 +368,27 @@ export function AuthLoginActions(props: {
               ? "Sign up with Google"
               : "Sign in with Google"}
         </button>
-      </div>
 
-      {props.showDevBootstrap ? (
-        <div className="chip-row" style={{ marginTop: "0.5rem" }}>
+        {props.showDevBootstrap ? (
           <button
             type="button"
-            className="chip chip--active"
+            className="auth-dev-button"
             disabled={!props.canUseBootstrap || busy !== null}
             onClick={() => void bootstrapLocalSession()}
           >
-            {busy === "bootstrap" ? "Bootstrapping..." : "Bootstrap Local Session"}
+            {busy === "bootstrap" ? "Bootstrapping..." : "Bootstrap local session"}
           </button>
-        </div>
-      ) : null}
+        ) : null}
 
-      {!props.canUseGoogle ? (
-        <p className="surface-sub" style={{ marginTop: "0.8rem" }}>
-          Google login is unavailable until required environment variables are configured.
-        </p>
-      ) : null}
+        {!props.canUseGoogle ? <p className="auth-config-note">Google login is unavailable until OAuth env vars are configured.</p> : null}
+        {!props.canUsePassword ? <p className="auth-config-note">Email/password login is unavailable until `DATABASE_URL` is configured.</p> : null}
+        {props.showDevBootstrap && !props.canUseBootstrap ? (
+          <p className="auth-config-note">Local bootstrap is unavailable until `DATABASE_URL` is configured.</p>
+        ) : null}
 
-      {!props.canUsePassword ? (
-        <p className="surface-sub" style={{ marginTop: "0.8rem" }}>
-          Email/password login is unavailable until `DATABASE_URL` is configured.
-        </p>
-      ) : null}
-
-      {props.showDevBootstrap && !props.canUseBootstrap ? (
-        <p className="surface-sub" style={{ marginTop: "0.8rem" }}>
-          Local bootstrap is unavailable until `DATABASE_URL` is configured.
-        </p>
-      ) : null}
-
-      {derivedError ? <p className="error-banner">{derivedError}</p> : null}
-      {error ? <p className="error-banner">{error}</p> : null}
+        {derivedError ? <p className="error-banner">{derivedError}</p> : null}
+        {error ? <p className="error-banner">{error}</p> : null}
+      </div>
     </section>
   );
 }
