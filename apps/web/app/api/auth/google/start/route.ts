@@ -53,9 +53,6 @@ export async function POST(request: Request): Promise<Response> {
 
   const next = normalizeNextPath(parsed.data.next);
   const intent = parsed.data.intent ?? "login";
-  if (intent === "register" && !parsed.data.inviteCode) {
-    return jsonError("Invite code is required for registration", 422, withRequestId(requestId));
-  }
 
   const stateNonce = randomUUID();
   const oauthNonce = randomUUID();

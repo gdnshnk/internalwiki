@@ -4970,6 +4970,53 @@ export async function getUserByEmail(email: string): Promise<{ id: string; email
   return rows[0] ?? null;
 }
 
+export async function getUserAuthByEmail(email: string): Promise<{
+  id: string;
+  email: string;
+  displayName?: string;
+  passwordHash?: string;
+} | null> {
+  const rows = await querySystem<{
+    id: string;
+    email: string;
+    display_name: string | null;
+    password_hash: string | null;
+  }>(
+    `
+      SELECT id, email, display_name, password_hash
+      FROM users
+      WHERE lower(email) = lower($1)
+      LIMIT 1
+    `,
+    [email]
+  );
+
+  if (!rows[0]) {
+    return null;
+  }
+
+  return {
+    id: rows[0].id,
+    email: rows[0].email,
+    displayName: rows[0].display_name ?? undefined,
+    passwordHash: rows[0].password_hash ?? undefined
+  };
+}
+
+export async function setUserPasswordHash(userId: string, passwordHash: string): Promise<void> {
+  await querySystem(
+    `
+      UPDATE users
+      SET
+        password_hash = $2,
+        password_set_at = NOW(),
+        updated_at = NOW()
+      WHERE id = $1
+    `,
+    [userId, passwordHash]
+  );
+}
+
 export async function getUserOnboardingCompletedAt(userId: string): Promise<string | undefined> {
   const rows = await query<{ onboarding_completed_at: string | null }>(
     `

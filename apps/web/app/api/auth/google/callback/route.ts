@@ -22,8 +22,10 @@ import { encryptSecret } from "@/lib/crypto";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { resolveRequestId, withRequestId } from "@/lib/request-id";
 import { safeError, safeInfo } from "@/lib/safe-log";
+import { registerSelfServeUser } from "@/lib/self-serve-auth";
 import { requestClientMetadata } from "@/lib/security";
 import { createSessionCookieValue, parseAuthContextCookieValue } from "@/lib/session-cookie";
+import { isWorkEmailAddress } from "@/lib/work-email";
 
 type GoogleTokenResponse = {
   access_token: string;
@@ -331,79 +333,97 @@ export async function GET(request: NextRequest): Promise<Response> {
     }
   } else {
     const inviteCode = authContext?.inviteCode;
-    if (!inviteCode) {
-      if (prefersJson(request)) {
-        return jsonError("Invite code is required for registration", 422, withRequestId(requestId));
+    if (inviteCode) {
+      const invite = await getRegistrationInviteByCode(inviteCode);
+      if (!invite || invite.revokedAt || invite.usedAt) {
+        if (prefersJson(request)) {
+          return jsonError("Invite is invalid or already used", 403, withRequestId(requestId));
+        }
+        return loginErrorRedirect(request, { error: "invalid_invite", nextPath, intent: "register", requestId });
       }
-      return loginErrorRedirect(request, { error: "invalid_invite", nextPath, intent: "register", requestId });
-    }
 
-    const invite = await getRegistrationInviteByCode(inviteCode);
-    if (!invite || invite.revokedAt || invite.usedAt) {
-      if (prefersJson(request)) {
-        return jsonError("Invite is invalid or already used", 403, withRequestId(requestId));
+      if (new Date(invite.expiresAt).getTime() <= Date.now()) {
+        if (prefersJson(request)) {
+          return jsonError("Invite has expired", 403, withRequestId(requestId));
+        }
+        return loginErrorRedirect(request, { error: "invite_expired", nextPath, intent: "register", requestId });
       }
-      return loginErrorRedirect(request, { error: "invalid_invite", nextPath, intent: "register", requestId });
-    }
 
-    if (new Date(invite.expiresAt).getTime() <= Date.now()) {
-      if (prefersJson(request)) {
-        return jsonError("Invite has expired", 403, withRequestId(requestId));
+      if (invite.email && invite.email.toLowerCase() !== email) {
+        if (prefersJson(request)) {
+          return jsonError("Invite does not match account email", 403, withRequestId(requestId));
+        }
+        return loginErrorRedirect(request, { error: "invalid_invite", nextPath, intent: "register", requestId });
       }
-      return loginErrorRedirect(request, { error: "invite_expired", nextPath, intent: "register", requestId });
-    }
 
-    if (invite.email && invite.email.toLowerCase() !== email) {
-      if (prefersJson(request)) {
-        return jsonError("Invite does not match account email", 403, withRequestId(requestId));
+      if (invite.domain && invite.domain.toLowerCase() !== emailDomain) {
+        if (prefersJson(request)) {
+          return jsonError("Invite does not match account domain", 403, withRequestId(requestId));
+        }
+        return loginErrorRedirect(request, { error: "invalid_invite", nextPath, intent: "register", requestId });
       }
-      return loginErrorRedirect(request, { error: "invalid_invite", nextPath, intent: "register", requestId });
-    }
 
-    if (invite.domain && invite.domain.toLowerCase() !== emailDomain) {
-      if (prefersJson(request)) {
-        return jsonError("Invite does not match account domain", 403, withRequestId(requestId));
+      const domains = await listOrganizationDomains(invite.organizationId);
+      const allowed = domains.some((domain) => domain.domain.toLowerCase() === emailDomain);
+      if (!allowed) {
+        if (prefersJson(request)) {
+          return jsonError("Email domain is not allowed for this organization", 403, withRequestId(requestId));
+        }
+        return loginErrorRedirect(request, { error: "domain_not_allowed", nextPath, intent: "register", requestId });
       }
-      return loginErrorRedirect(request, { error: "invalid_invite", nextPath, intent: "register", requestId });
-    }
 
-    const domains = await listOrganizationDomains(invite.organizationId);
-    const allowed = domains.some((domain) => domain.domain.toLowerCase() === emailDomain);
-    if (!allowed) {
-      if (prefersJson(request)) {
-        return jsonError("Email domain is not allowed for this organization", 403, withRequestId(requestId));
+      const consumed = await consumeRegistrationInvite({
+        inviteId: invite.id,
+        organizationId: invite.organizationId,
+        usedBy: userId
+      });
+      if (!consumed) {
+        if (prefersJson(request)) {
+          return jsonError("Invite is no longer valid", 403, withRequestId(requestId));
+        }
+        return loginErrorRedirect(request, { error: "invalid_invite", nextPath, intent: "register", requestId });
       }
-      return loginErrorRedirect(request, { error: "domain_not_allowed", nextPath, intent: "register", requestId });
-    }
 
-    const consumed = await consumeRegistrationInvite({
-      inviteId: invite.id,
-      organizationId: invite.organizationId,
-      usedBy: userId
-    });
-    if (!consumed) {
-      if (prefersJson(request)) {
-        return jsonError("Invite is no longer valid", 403, withRequestId(requestId));
+      await createOrUpdateUser({
+        id: userId,
+        email,
+        displayName: idClaims.name
+      });
+      await createMembership({
+        organizationId: invite.organizationId,
+        userId,
+        role: invite.role,
+        createdBy: invite.createdBy ?? userId
+      });
+
+      membership = await resolveMembership({
+        userId,
+        organizationId: invite.organizationId
+      });
+    } else {
+      if (!isWorkEmailAddress(email)) {
+        if (prefersJson(request)) {
+          return jsonError("Use your company work email to register.", 422, withRequestId(requestId));
+        }
+        return loginErrorRedirect(request, { error: "domain_not_allowed", nextPath, intent: "register", requestId });
       }
-      return loginErrorRedirect(request, { error: "invalid_invite", nextPath, intent: "register", requestId });
+
+      const existingMembership = await resolveMembership({ email });
+      if (existingMembership) {
+        membership = existingMembership;
+      } else {
+        const created = await registerSelfServeUser({
+          email,
+          displayName: idClaims.name ?? email
+        });
+        membership = {
+          userId: created.userId,
+          email: created.email,
+          organizationId: created.organizationId,
+          role: created.role
+        };
+      }
     }
-
-    await createOrUpdateUser({
-      id: userId,
-      email,
-      displayName: idClaims.name
-    });
-    await createMembership({
-      organizationId: invite.organizationId,
-      userId,
-      role: invite.role,
-      createdBy: invite.createdBy ?? userId
-    });
-
-    membership = await resolveMembership({
-      userId,
-      organizationId: invite.organizationId
-    });
   }
 
   if (!membership) {

@@ -1,15 +1,15 @@
 import { AuthLoginActions } from "@/components/auth-login-actions";
 import { normalizeNextPath } from "@/lib/auth-next";
 
-const requiredEnvKeys = [
-  "DATABASE_URL",
-  "GOOGLE_CLIENT_ID",
-  "GOOGLE_CLIENT_SECRET",
-  "GOOGLE_OAUTH_REDIRECT_URI"
-] as const;
+const requiredEnvKeys = ["DATABASE_URL"] as const;
+const googleEnvKeys = ["GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_OAUTH_REDIRECT_URI"] as const;
 
 function missingRequiredEnv(): string[] {
   return requiredEnvKeys.filter((key) => !process.env[key]);
+}
+
+function missingGoogleEnv(): string[] {
+  return googleEnvKeys.filter((key) => !process.env[key]);
 }
 
 export default async function LoginPage({
@@ -20,8 +20,10 @@ export default async function LoginPage({
   const resolvedSearch = await searchParams;
   const nextPath = normalizeNextPath(resolvedSearch.next ?? "/app");
   const missing = missingRequiredEnv();
+  const missingGoogle = missingGoogleEnv();
   const isDev = process.env.NODE_ENV !== "production";
-  const canUseGoogle = missing.length === 0;
+  const canUseGoogle = missingGoogle.length === 0;
+  const canUsePassword = missing.length === 0;
   const canUseBootstrap = Boolean(process.env.DATABASE_URL);
   const defaultIntent = resolvedSearch.intent === "register" ? "register" : "login";
 
@@ -31,6 +33,7 @@ export default async function LoginPage({
         nextPath={nextPath}
         showDevBootstrap={isDev}
         canUseGoogle={canUseGoogle}
+        canUsePassword={canUsePassword}
         canUseBootstrap={canUseBootstrap}
         authErrorCode={resolvedSearch.error}
         defaultIntent={defaultIntent}
@@ -41,13 +44,19 @@ export default async function LoginPage({
           <p className="workspace-header__eyebrow">Setup required</p>
           <h2 className="surface-title">Local environment checklist</h2>
           <p className="surface-sub">
-            `/app` needs a configured database and OAuth settings. Set the following variables and restart the web server.
+            `/app` needs a configured database and at least one login method. Configure env vars and restart the web
+            server.
           </p>
 
           <div className="data-grid" style={{ marginTop: "0.8rem" }}>
             {requiredEnvKeys.map((envKey) => (
               <div key={envKey} className="data-pill">
                 {missing.includes(envKey) ? "Missing" : "Configured"}: <code>{envKey}</code>
+              </div>
+            ))}
+            {googleEnvKeys.map((envKey) => (
+              <div key={envKey} className="data-pill">
+                {missingGoogle.includes(envKey) ? "Optional for Google SSO" : "Configured"}: <code>{envKey}</code>
               </div>
             ))}
           </div>

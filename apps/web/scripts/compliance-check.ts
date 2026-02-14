@@ -38,6 +38,8 @@ async function runChecks(): Promise<CheckResult[]> {
   });
 
   const mutatingRouteFiles = [
+    "apps/web/app/api/auth/password/login/route.ts",
+    "apps/web/app/api/auth/password/register/route.ts",
     "apps/web/app/api/onboarding/complete/route.ts",
     "apps/web/app/api/orgs/[orgId]/summaries/[summaryId]/review/route.ts",
     "apps/web/app/api/orgs/[orgId]/connectors/route.ts",
@@ -126,4 +128,3 @@ main().catch((error) => {
   console.error("compliance-check crashed:", (error as Error).message);
   process.exit(1);
 });
-
