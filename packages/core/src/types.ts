@@ -1,4 +1,10 @@
-export type ConnectorType = "google_drive" | "google_docs" | "notion";
+export type ConnectorType =
+  | "google_drive"
+  | "google_docs"
+  | "slack"
+  | "microsoft_teams"
+  | "microsoft_sharepoint"
+  | "microsoft_onedrive";
 
 export type SourceTrustFactors = {
   recency: number;
@@ -185,6 +191,16 @@ export type AssistantQueryResponse = {
   timings: {
     retrievalMs: number;
     generationMs: number;
+  };
+  verification: {
+    status: "passed" | "blocked";
+    reasons: string[];
+    citationCoverage: number;
+    unsupportedClaims: number;
+  };
+  permissions: {
+    filteredOutCount: number;
+    aclMode: "enforced";
   };
   mode: AssistantMode;
   model: string;

@@ -107,6 +107,8 @@ export async function syncConnector(payload: SyncPayload, helpers: JobHelpers): 
           externalId: item.externalId,
           checksum: item.checksum,
           sourceType: item.sourceType,
+          sourceSystem: item.sourceSystem,
+          aclPrincipalKeys: item.aclPrincipalKeys,
           sourceUrl: item.sourceUrl,
           canonicalSourceUrl: item.canonicalSourceUrl,
           title: item.title,

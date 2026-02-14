@@ -19,6 +19,9 @@ export type AssistantStreamMessage = {
   traceabilityCoverage?: number;
   missingAuthorCount?: number;
   missingDateCount?: number;
+  verificationStatus?: "passed" | "blocked";
+  verificationReasons?: string[];
+  permissionFilteredOutCount?: number;
 };
 
 export function MessageStream(props: {
@@ -52,8 +55,16 @@ export function MessageStream(props: {
               </div>
 
               <div className="msg-meta">
+                {message.verificationStatus ? (
+                  <span>
+                    Verification {message.verificationStatus === "passed" ? "passed" : "blocked"}
+                  </span>
+                ) : null}
                 {typeof message.citationCoverage === "number" ? (
                   <span>Citation coverage {Math.round(message.citationCoverage * 100)}%</span>
+                ) : null}
+                {typeof message.permissionFilteredOutCount === "number" ? (
+                  <span>Permission filtered {message.permissionFilteredOutCount}</span>
                 ) : null}
                 {typeof message.missingAuthorCount === "number" ? (
                   <span>Missing author {message.missingAuthorCount}</span>
@@ -67,6 +78,11 @@ export function MessageStream(props: {
                 {props.firstTokenMs !== null ? <span>First token {props.firstTokenMs}ms</span> : null}
                 {props.completionMs !== null ? <span>Done {props.completionMs}ms</span> : null}
               </div>
+              {message.verificationStatus === "blocked" && message.verificationReasons?.length ? (
+                <p className="error-banner">
+                  {message.verificationReasons.join(" ")}
+                </p>
+              ) : null}
             </>
           ) : null}
 

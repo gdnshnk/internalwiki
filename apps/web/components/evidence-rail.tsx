@@ -10,7 +10,16 @@ function connectorLabel(connector: EvidenceItem["connectorType"]): string {
   if (connector === "google_drive") {
     return "Google Drive";
   }
-  return "Notion";
+  if (connector === "slack") {
+    return "Slack";
+  }
+  if (connector === "microsoft_teams") {
+    return "Microsoft Teams";
+  }
+  if (connector === "microsoft_sharepoint") {
+    return "Microsoft SharePoint";
+  }
+  return "Microsoft OneDrive";
 }
 
 function escapeRegex(value: string): string {

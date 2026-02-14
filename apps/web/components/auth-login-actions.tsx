@@ -113,7 +113,10 @@ export function AuthLoginActions(props: {
     <section className="surface-card">
       <p className="workspace-header__eyebrow">Authentication</p>
       <h1 className="surface-title">Login required</h1>
-      <p className="surface-sub">Sign in to access your InternalWiki assistant workspace.</p>
+      <p className="surface-sub">
+        Sign in to access your InternalWiki assistant workspace. If you were redirected from `/app`, the app is
+        running; sign in or bootstrap a local session.
+      </p>
 
       <div className="auth-tabs" role="tablist" aria-label="Authentication intent">
         <button

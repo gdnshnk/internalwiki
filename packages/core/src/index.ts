@@ -1,4 +1,5 @@
 export * from "./types";
+export * from "./connectors";
 export * from "./scoring";
 export * from "./chunking";
 export * from "./citations";

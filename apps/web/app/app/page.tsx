@@ -1,6 +1,7 @@
 import { AssistantWorkspace } from "@/components/assistant-workspace";
 import { AppOnboardingChecklist } from "@/components/app-onboarding-checklist";
 import { getSessionContextOptional } from "@/lib/session";
+import { getSetupStatus } from "@/lib/setup-status";
 import { redirect } from "next/navigation";
 import {
   countDocumentsByOrganization,
@@ -21,6 +22,15 @@ export default async function DashboardPage({
   }
 
   const resolvedSearch = await searchParams;
+  const setupStatus = await getSetupStatus({
+    organizationId: session.organizationId,
+    userId: session.userId,
+    userEmail: session.email
+  });
+  if (!setupStatus.readyToAsk) {
+    redirect("/app/setup");
+  }
+
   const [connectors, documentCount, latestThreads, onboardingCompletedAt, selectedThread] = await Promise.all([
     listConnectorAccounts(session.organizationId),
     countDocumentsByOrganization(session.organizationId),
@@ -51,7 +61,7 @@ export default async function DashboardPage({
           <h1 className="surface-title">Connect your first workspace source</h1>
           <p className="surface-sub">
             Add your first source integration to start indexing organization knowledge for grounded answers.
-            Current connector catalog includes Google Workspace and Notion.
+            Current connector catalog includes Google Workspace, Slack, and Microsoft 365.
           </p>
           <a href="/app/settings/connectors" className="ask-submit" style={{ display: "inline-flex", marginTop: "0.8rem" }}>
             Open connector setup

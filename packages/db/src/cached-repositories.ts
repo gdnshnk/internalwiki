@@ -80,6 +80,7 @@ export async function searchDocumentChunksHybrid(params: {
   queryText: string;
   queryVector: string;
   sourceType?: ConnectorType;
+  viewerPrincipalKeys?: string[];
   limit?: number;
   dateRange?: { from?: string; to?: string };
   author?: string;
@@ -93,6 +94,9 @@ export async function searchDocumentChunksHybrid(params: {
     "search",
     params.organizationId,
     params.sourceType ?? "all",
+    params.viewerPrincipalKeys
+      ? Buffer.from(params.viewerPrincipalKeys.slice().sort().join("|")).toString("base64").slice(0, 16)
+      : "viewer:none",
     queryHash,
     String(params.limit ?? 8)
   );

@@ -17,12 +17,12 @@ const modeCopy: Record<
   }
 > = {
   ask: {
-    launchPlaceholder: "Ask about policies, owners, or decisions...",
-    threadPlaceholder: "Refine your question or compare evidence...",
+    launchPlaceholder: "Ask for a cited summary of policies, owners, or decisions...",
+    threadPlaceholder: "Refine your summary request or compare evidence...",
     quickPrompts: [
-      "What changed in onboarding SOP this month?",
-      "Which teams own launch blockers this week?",
-      "What is our latest incident escalation policy?"
+      "Summarize what changed in onboarding SOP this month.",
+      "Summarize which teams own launch blockers this week.",
+      "Summarize our latest incident escalation policy."
     ]
   },
   summarize: {
@@ -35,12 +35,12 @@ const modeCopy: Record<
     ]
   },
   trace: {
-    launchPlaceholder: "Trace a claim to exact source evidence...",
-    threadPlaceholder: "Trace another claim or disputed detail...",
+    launchPlaceholder: "Summarize claim traceability with exact source evidence...",
+    threadPlaceholder: "Trace another claim and summarize supporting evidence...",
     quickPrompts: [
-      "Trace policy source for incident severity classification.",
-      "Trace who approved the latest pricing exceptions.",
-      "Trace the origin of the current security review checklist."
+      "Summarize traceability for incident severity classification policy.",
+      "Summarize who approved the latest pricing exceptions with citations.",
+      "Summarize the origin of the current security review checklist."
     ]
   }
 };
@@ -241,7 +241,10 @@ export function AssistantWorkspace(props: {
                     claims: event.payload.claims,
                     traceabilityCoverage: event.payload.traceability.coverage,
                     missingAuthorCount: event.payload.traceability.missingAuthorCount,
-                    missingDateCount: event.payload.traceability.missingDateCount
+                    missingDateCount: event.payload.traceability.missingDateCount,
+                    verificationStatus: event.payload.verification.status,
+                    verificationReasons: event.payload.verification.reasons,
+                    permissionFilteredOutCount: event.payload.permissions.filteredOutCount
                   }
                 : message
             )

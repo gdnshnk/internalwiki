@@ -18,6 +18,12 @@ import type {
   SloSummary,
   SourceScore
 } from "@internalwiki/core";
+import {
+  ACTIVE_CONNECTOR_TYPES,
+  ACL_ENFORCED_CONNECTOR_TYPES,
+  GOOGLE_CONNECTOR_TYPES,
+  isConnectorType
+} from "@internalwiki/core";
 import { query, pool } from "./client";
 import type {
   AuditExportJobRecord,
@@ -46,7 +52,7 @@ type DbDocumentRow = {
   id: string;
   organization_id: string;
   title: string;
-  source_type: ConnectorType;
+  source_type: string;
   source_url: string;
   source_external_id: string | null;
   source_format: string | null;
@@ -70,7 +76,7 @@ type DbMembershipRow = {
 type DbConnectorAccountRow = {
   id: string;
   organization_id: string;
-  connector_type: ConnectorType;
+  connector_type: string;
   status: ConnectorAccountRecord["status"];
   encrypted_access_token: string;
   encrypted_refresh_token: string | null;
@@ -114,7 +120,7 @@ type DbChunkSearchRow = {
   source_version_label: string | null;
   source_checksum: string | null;
   connector_sync_run_id: string | null;
-  connector_type: ConnectorType;
+  connector_type: string;
   vector_distance: number | null;
   lexical_score: number | null;
 };
@@ -268,12 +274,30 @@ type DbIdempotencyKeyRow = {
   updated_at: string;
 };
 
+type DbUserSourceIdentityRow = {
+  source_system: "slack" | "microsoft";
+  source_user_key: string;
+};
+
+type DbAclCoverageRow = {
+  connector_type: string;
+  documents: number;
+  acl_covered: number;
+};
+
 function nowIso(): string {
   return new Date().toISOString();
 }
 
 function hashContent(input: string): string {
   return createHash("sha256").update(input).digest("hex");
+}
+
+function toConnectorType(value: string): ConnectorType {
+  if (!isConnectorType(value)) {
+    throw new Error(`Unsupported connector type in persisted data: ${value}`);
+  }
+  return value;
 }
 
 function mapDocument(row: DbDocumentRow): DocumentRecord {
@@ -296,7 +320,7 @@ function mapDocument(row: DbDocumentRow): DocumentRecord {
     id: row.id,
     organizationId: row.organization_id,
     title: row.title,
-    sourceType: row.source_type,
+    sourceType: toConnectorType(row.source_type),
     sourceUrl: row.source_url,
     owner: row.owner_identity ?? "unknown",
     updatedAt: row.updated_at,
@@ -312,7 +336,7 @@ function mapConnectorAccount(row: DbConnectorAccountRow): ConnectorAccountRecord
   return {
     id: row.id,
     organizationId: row.organization_id,
-    connectorType: row.connector_type,
+    connectorType: toConnectorType(row.connector_type),
     status: row.status,
     encryptedAccessToken: row.encrypted_access_token,
     encryptedRefreshToken: row.encrypted_refresh_token ?? undefined,
@@ -496,9 +520,10 @@ export async function listDocuments(organizationId: string): Promise<DocumentRec
         ON ss.organization_id = d.organization_id
         AND ss.document_version_id = latest.id
       WHERE d.organization_id = $1
+        AND d.source_type = ANY($2::text[])
       ORDER BY d.updated_at DESC
     `,
-    [organizationId]
+    [organizationId, ACTIVE_CONNECTOR_TYPES]
   );
 
   return rows.map(mapDocument);
@@ -540,9 +565,10 @@ export async function getDocumentById(organizationId: string, docId: string): Pr
         AND ss.document_version_id = latest.id
       WHERE d.organization_id = $1
         AND d.id = $2
+        AND d.source_type = ANY($3::text[])
       LIMIT 1
     `,
-    [organizationId, docId]
+    [organizationId, docId, ACTIVE_CONNECTOR_TYPES]
   );
 
   return rows[0] ? mapDocument(rows[0]) : null;
@@ -1128,9 +1154,10 @@ export async function listConnectorAccounts(organizationId: string): Promise<Con
         updated_at
       FROM connector_accounts
       WHERE organization_id = $1
+        AND connector_type = ANY($2::text[])
       ORDER BY created_at DESC
     `,
-    [organizationId]
+    [organizationId, ACTIVE_CONNECTOR_TYPES]
   );
 
   return rows.map(mapConnectorAccount);
@@ -1156,9 +1183,10 @@ export async function getConnectorAccount(organizationId: string, connectorAccou
       FROM connector_accounts
       WHERE organization_id = $1
         AND id = $2
+        AND connector_type = ANY($3::text[])
       LIMIT 1
     `,
-    [organizationId, connectorAccountId]
+    [organizationId, connectorAccountId, ACTIVE_CONNECTOR_TYPES]
   );
 
   return rows[0] ? mapConnectorAccount(rows[0]) : null;
@@ -1191,6 +1219,7 @@ export async function updateConnectorAccount(
         updated_at = NOW()
       WHERE organization_id = $1
         AND id = $2
+        AND connector_type = ANY($10::text[])
       RETURNING
         id,
         organization_id,
@@ -1215,7 +1244,8 @@ export async function updateConnectorAccount(
       patch.tokenExpiresAt ?? null,
       patch.syncCursor ?? null,
       patch.displayName ?? null,
-      patch.externalWorkspaceId ?? null
+      patch.externalWorkspaceId ?? null,
+      ACTIVE_CONNECTOR_TYPES
     ]
   );
 
@@ -1259,11 +1289,277 @@ export async function listActiveConnectorAccounts(): Promise<ConnectorAccountRec
         updated_at
       FROM connector_accounts
       WHERE status = 'active'
+        AND connector_type = ANY($1::text[])
       ORDER BY updated_at DESC
-    `
+    `,
+    [ACTIVE_CONNECTOR_TYPES]
   );
 
   return rows.map(mapConnectorAccount);
+}
+
+export async function upsertUserSourceIdentity(input: {
+  organizationId: string;
+  userId: string;
+  sourceSystem: "slack" | "microsoft";
+  sourceUserKey: string;
+  displayName?: string;
+  createdBy?: string;
+}): Promise<void> {
+  await query(
+    `
+      INSERT INTO user_source_identities (
+        id,
+        organization_id,
+        user_id,
+        source_system,
+        source_user_key,
+        display_name,
+        created_by
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+      ON CONFLICT (organization_id, user_id, source_system, source_user_key)
+      DO UPDATE
+      SET
+        display_name = COALESCE(EXCLUDED.display_name, user_source_identities.display_name),
+        updated_at = NOW()
+    `,
+    [
+      randomUUID(),
+      input.organizationId,
+      input.userId,
+      input.sourceSystem,
+      input.sourceUserKey,
+      input.displayName ?? null,
+      input.createdBy ?? null
+    ]
+  );
+}
+
+export async function listUserSourceIdentityKeys(input: {
+  organizationId: string;
+  userId: string;
+  sourceSystem?: "slack" | "microsoft";
+}): Promise<string[]> {
+  const rows = await query<DbUserSourceIdentityRow>(
+    `
+      SELECT source_system, source_user_key
+      FROM user_source_identities
+      WHERE organization_id = $1
+        AND user_id = $2
+        AND ($3::text IS NULL OR source_system = $3::text)
+      ORDER BY source_system ASC, source_user_key ASC
+    `,
+    [input.organizationId, input.userId, input.sourceSystem ?? null]
+  );
+
+  return rows.map((row) => row.source_user_key);
+}
+
+export async function replaceExternalItemAclEntries(input: {
+  organizationId: string;
+  externalItemId: string;
+  sourceSystem: "slack" | "microsoft";
+  principalKeys: string[];
+  createdBy?: string;
+}): Promise<void> {
+  const uniqueKeys = Array.from(new Set(input.principalKeys.map((entry) => entry.trim()).filter(Boolean)));
+  await query(
+    `
+      DELETE FROM external_item_acl_entries
+      WHERE organization_id = $1
+        AND external_item_id = $2
+        AND source_system = $3
+    `,
+    [input.organizationId, input.externalItemId, input.sourceSystem]
+  );
+
+  if (uniqueKeys.length === 0) {
+    return;
+  }
+
+  for (const principalKey of uniqueKeys) {
+    await query(
+      `
+        INSERT INTO external_item_acl_entries (
+          id,
+          organization_id,
+          external_item_id,
+          source_system,
+          principal_key,
+          permission_level,
+          created_by
+        ) VALUES ($1, $2, $3, $4, $5, 'read', $6)
+        ON CONFLICT (organization_id, external_item_id, source_system, principal_key)
+        DO UPDATE SET updated_at = NOW()
+      `,
+      [
+        randomUUID(),
+        input.organizationId,
+        input.externalItemId,
+        input.sourceSystem,
+        principalKey,
+        input.createdBy ?? null
+      ]
+    );
+  }
+}
+
+export async function countOrganizationAclEntries(organizationId: string): Promise<number> {
+  const rows = await query<{ count: number }>(
+    `
+      SELECT COUNT(*)::int AS count
+      FROM external_item_acl_entries
+      WHERE organization_id = $1
+    `,
+    [organizationId]
+  );
+
+  return Number(rows[0]?.count ?? 0);
+}
+
+export async function getAclCoverageByConnector(organizationId: string): Promise<
+  Array<{
+    connectorType: string;
+    documents: number;
+    aclCovered: number;
+  }>
+> {
+  const rows = await query<DbAclCoverageRow>(
+    `
+      SELECT
+        d.source_type AS connector_type,
+        COUNT(*)::int AS documents,
+        COUNT(*) FILTER (
+          WHERE EXISTS (
+            SELECT 1
+            FROM external_items ei
+            JOIN external_item_acl_entries eae
+              ON eae.organization_id = ei.organization_id
+              AND eae.external_item_id = ei.id
+            WHERE ei.organization_id = d.organization_id
+              AND ei.external_id = d.source_external_id
+              AND ei.source_type = d.source_type
+          )
+        )::int AS acl_covered
+      FROM documents d
+      WHERE d.organization_id = $1
+        AND d.source_type = ANY($2::text[])
+      GROUP BY d.source_type
+      ORDER BY d.source_type ASC
+    `,
+    [organizationId, ACL_ENFORCED_CONNECTOR_TYPES]
+  );
+
+  return rows.map((row) => ({
+    connectorType: row.connector_type,
+    documents: Number(row.documents),
+    aclCovered: Number(row.acl_covered)
+  }));
+}
+
+export async function createAnswerVerificationRun(input: {
+  organizationId: string;
+  chatMessageId: string;
+  status: "passed" | "blocked";
+  reasons: string[];
+  citationCoverage: number;
+  unsupportedClaims: number;
+  permissionFilteredOutCount?: number;
+  createdBy?: string;
+}): Promise<void> {
+  await query(
+    `
+      INSERT INTO answer_verification_runs (
+        id,
+        organization_id,
+        chat_message_id,
+        status,
+        reasons,
+        citation_coverage,
+        unsupported_claims,
+        permission_filtered_out_count,
+        created_by
+      ) VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9)
+      ON CONFLICT (organization_id, chat_message_id)
+      DO UPDATE SET
+        status = EXCLUDED.status,
+        reasons = EXCLUDED.reasons,
+        citation_coverage = EXCLUDED.citation_coverage,
+        unsupported_claims = EXCLUDED.unsupported_claims,
+        permission_filtered_out_count = EXCLUDED.permission_filtered_out_count,
+        updated_at = NOW()
+    `,
+    [
+      randomUUID(),
+      input.organizationId,
+      input.chatMessageId,
+      input.status,
+      JSON.stringify(input.reasons),
+      input.citationCoverage,
+      input.unsupportedClaims,
+      input.permissionFilteredOutCount ?? 0,
+      input.createdBy ?? null
+    ]
+  );
+}
+
+export async function getLatestVerificationStatus(organizationId: string): Promise<{
+  total: number;
+  blocked: number;
+  passRate: number;
+  latest?: {
+    status: "passed" | "blocked";
+    citationCoverage: number;
+    unsupportedClaims: number;
+    createdAt: string;
+  };
+}> {
+  const [totals, latest] = await Promise.all([
+    query<{ total: number; blocked: number }>(
+      `
+        SELECT
+          COUNT(*)::int AS total,
+          COUNT(*) FILTER (WHERE status = 'blocked')::int AS blocked
+        FROM answer_verification_runs
+        WHERE organization_id = $1
+          AND created_at >= NOW() - INTERVAL '7 days'
+      `,
+      [organizationId]
+    ),
+    query<{
+      status: "passed" | "blocked";
+      citation_coverage: number;
+      unsupported_claims: number;
+      created_at: string;
+    }>(
+      `
+        SELECT status, citation_coverage, unsupported_claims, created_at
+        FROM answer_verification_runs
+        WHERE organization_id = $1
+        ORDER BY created_at DESC
+        LIMIT 1
+      `,
+      [organizationId]
+    )
+  ]);
+
+  const total = Number(totals[0]?.total ?? 0);
+  const blocked = Number(totals[0]?.blocked ?? 0);
+  const passRate = total > 0 ? Number((((total - blocked) / total) * 100).toFixed(2)) : 100;
+
+  return {
+    total,
+    blocked,
+    passRate,
+    latest: latest[0]
+      ? {
+          status: latest[0].status,
+          citationCoverage: Number(latest[0].citation_coverage),
+          unsupportedClaims: Number(latest[0].unsupported_claims),
+          createdAt: latest[0].created_at
+        }
+      : undefined
+  };
 }
 
 export async function markConnectorReauthRequired(organizationId: string, connectorAccountId: string): Promise<void> {
@@ -1431,7 +1727,7 @@ export async function listStuckSyncRuns(input?: {
     run_id: string;
     organization_id: string;
     connector_account_id: string;
-    connector_type: ConnectorType;
+    connector_type: string;
     started_at: string;
   }>(
     `
@@ -1446,20 +1742,23 @@ export async function listStuckSyncRuns(input?: {
         ON ca.organization_id = sr.organization_id
         AND ca.id = sr.connector_account_id
       WHERE sr.status = 'running'
+        AND ca.connector_type = ANY($3::text[])
         AND sr.started_at < NOW() - ($1::int * INTERVAL '1 minute')
       ORDER BY sr.started_at ASC
       LIMIT $2
     `,
-    [olderThanMinutes, limit]
+    [olderThanMinutes, limit, ACTIVE_CONNECTOR_TYPES]
   );
 
-  return rows.map((row) => ({
-    runId: row.run_id,
-    organizationId: row.organization_id,
-    connectorAccountId: row.connector_account_id,
-    connectorType: row.connector_type,
-    startedAt: row.started_at
-  }));
+  return rows
+    .filter((row) => isConnectorType(row.connector_type))
+    .map((row) => ({
+      runId: row.run_id,
+      organizationId: row.organization_id,
+      connectorAccountId: row.connector_account_id,
+      connectorType: row.connector_type as ConnectorType,
+      startedAt: row.started_at
+    }));
 }
 
 export async function getConnectorSyncRun(
@@ -1531,6 +1830,8 @@ export async function upsertExternalItemAndDocuments(input: {
   externalId: string;
   checksum: string;
   sourceType: ConnectorType;
+  sourceSystem?: "slack" | "microsoft";
+  aclPrincipalKeys?: string[];
   sourceUrl: string;
   title: string;
   owner: string;
@@ -1614,6 +1915,56 @@ export async function upsertExternalItemAndDocuments(input: {
         input.createdBy ?? null
       ]
     );
+
+    const persistedExternalItem = await client.query<{ id: string }>(
+      `
+        SELECT id
+        FROM external_items
+        WHERE organization_id = $1
+          AND connector_account_id = $2
+          AND external_id = $3
+        LIMIT 1
+      `,
+      [input.organizationId, input.connectorAccountId, input.externalId]
+    );
+    const externalItemId = persistedExternalItem.rows[0]?.id;
+    if (externalItemId && input.sourceSystem && input.aclPrincipalKeys) {
+      const uniqueKeys = Array.from(new Set(input.aclPrincipalKeys.map((entry) => entry.trim()).filter(Boolean)));
+      await client.query(
+        `
+          DELETE FROM external_item_acl_entries
+          WHERE organization_id = $1
+            AND external_item_id = $2
+            AND source_system = $3
+        `,
+        [input.organizationId, externalItemId, input.sourceSystem]
+      );
+      for (const principalKey of uniqueKeys) {
+        await client.query(
+          `
+            INSERT INTO external_item_acl_entries (
+              id,
+              organization_id,
+              external_item_id,
+              source_system,
+              principal_key,
+              permission_level,
+              created_by
+            ) VALUES ($1, $2, $3, $4, $5, 'read', $6)
+            ON CONFLICT (organization_id, external_item_id, source_system, principal_key)
+            DO UPDATE SET updated_at = NOW()
+          `,
+          [
+            randomUUID(),
+            input.organizationId,
+            externalItemId,
+            input.sourceSystem,
+            principalKey,
+            input.createdBy ?? null
+          ]
+        );
+      }
+    }
 
     let documentId: string = randomUUID();
     const existingDocument = await client.query<{ id: string }>(
@@ -1917,6 +2268,7 @@ export async function searchDocumentChunksHybrid(params: {
   queryText: string;
   queryVector: string;
   sourceType?: ConnectorType;
+  viewerPrincipalKeys?: string[];
   limit?: number;
   dateRange?: { from?: string; to?: string };
   author?: string;
@@ -1929,14 +2281,41 @@ export async function searchDocumentChunksHybrid(params: {
   const k = 30; // Reduced from 60 for optimized vector search
 
   // Build WHERE clause conditions for filters
-  const conditions: string[] = ["d.organization_id = $1"];
-  const queryParams: unknown[] = [params.organizationId];
-  let paramIndex = 2;
+  const conditions: string[] = ["d.organization_id = $1", "d.source_type = ANY($2::text[])"];
+  const queryParams: unknown[] = [params.organizationId, ACTIVE_CONNECTOR_TYPES];
+  let paramIndex = 3;
 
   if (params.sourceType) {
     conditions.push(`d.source_type = $${paramIndex}`);
     queryParams.push(params.sourceType);
     paramIndex += 1;
+  }
+
+  if (params.viewerPrincipalKeys) {
+    const googleIndex = paramIndex;
+    const aclTypesIndex = paramIndex + 1;
+    const principalsIndex = paramIndex + 2;
+    conditions.push(
+      `(
+        d.source_type = ANY($${googleIndex}::text[])
+        OR (
+          d.source_type = ANY($${aclTypesIndex}::text[])
+          AND EXISTS (
+            SELECT 1
+            FROM external_items ei
+            JOIN external_item_acl_entries eae
+              ON eae.organization_id = ei.organization_id
+              AND eae.external_item_id = ei.id
+            WHERE ei.organization_id = d.organization_id
+              AND ei.source_type = d.source_type
+              AND ei.external_id = d.source_external_id
+              AND eae.principal_key = ANY($${principalsIndex}::text[])
+          )
+        )
+      )`
+    );
+    queryParams.push(GOOGLE_CONNECTOR_TYPES, ACL_ENFORCED_CONNECTOR_TYPES, params.viewerPrincipalKeys);
+    paramIndex += 3;
   }
 
   if (params.dateRange?.from) {
@@ -2084,6 +2463,9 @@ export async function searchDocumentChunksHybrid(params: {
 
   for (let index = 0; index < vectorRows.length; index += 1) {
     const row = vectorRows[index];
+    if (!isConnectorType(row.connector_type)) {
+      continue;
+    }
     const existing = merged.get(row.chunk_id);
     merged.set(row.chunk_id, {
       chunkId: row.chunk_id,
@@ -2111,6 +2493,9 @@ export async function searchDocumentChunksHybrid(params: {
 
   for (let index = 0; index < lexicalRows.length; index += 1) {
     const row = lexicalRows[index];
+    if (!isConnectorType(row.connector_type)) {
+      continue;
+    }
     const existing = merged.get(row.chunk_id);
     merged.set(row.chunk_id, {
       chunkId: row.chunk_id,
@@ -2713,7 +3098,9 @@ export async function getOrganizationIdsWithActiveConnectors(): Promise<string[]
       SELECT DISTINCT organization_id
       FROM connector_accounts
       WHERE status = 'active'
-    `
+        AND connector_type = ANY($1::text[])
+    `,
+    [ACTIVE_CONNECTOR_TYPES]
   );
 
   return rows.map((row) => row.organization_id);
@@ -2742,9 +3129,10 @@ export async function getConnectorAccountById(connectorAccountId: string): Promi
         updated_at
       FROM connector_accounts
       WHERE id = $1
+        AND connector_type = ANY($2::text[])
       LIMIT 1
     `,
-    [connectorAccountId]
+    [connectorAccountId, ACTIVE_CONNECTOR_TYPES]
   );
 
   return rows[0] ? mapConnectorAccount(rows[0]) : null;

@@ -149,6 +149,7 @@ function buildSampleItems(nowIso: string): NormalizedExternalItem[] {
       sourceFormat: GOOGLE_DOC_MIME,
       owner: "ops-lead@internalwiki.com",
       author: "ops-lead@internalwiki.com",
+      aclPrincipalKeys: ["google:workspace"],
       mimeType: GOOGLE_DOC_MIME,
       content: "Operational escalation, on-call handoffs, and incident runbook ownership."
     },
@@ -166,6 +167,7 @@ function buildSampleItems(nowIso: string): NormalizedExternalItem[] {
       sourceFormat: "text/plain",
       owner: "product-lead@internalwiki.com",
       author: "product-lead@internalwiki.com",
+      aclPrincipalKeys: ["google:workspace"],
       mimeType: "text/plain",
       content: "Quarter priorities, launch sequencing, risk owners, and dependency notes."
     }
@@ -233,6 +235,7 @@ export class GoogleWorkspaceConnector implements WorkspaceConnector {
         sourceFormat: file.mimeType,
         owner,
         author: owner,
+        aclPrincipalKeys: ["google:workspace"],
         mimeType: file.mimeType,
         content
       });

@@ -8,11 +8,20 @@ import { assertScopedOrgAccess } from "@/lib/organization";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { resolveRequestId, withRequestId } from "@/lib/request-id";
 import { enforceMutationSecurity } from "@/lib/security";
-import { createConnectorAccount, listConnectorAccounts } from "@internalwiki/db";
+import { enqueueSyncConnectorJob } from "@/lib/worker-jobs";
+import { createConnectorAccount, listConnectorAccounts, upsertUserSourceIdentity } from "@internalwiki/db";
 import { randomUUID } from "node:crypto";
 
 const connectorSchema = z.object({
-  connectorType: z.enum(["google_drive", "google_docs", "notion"]),
+  connectorType: z.enum([
+    "google_drive",
+    "google_docs",
+    "slack",
+    "microsoft_teams",
+    "microsoft_sharepoint",
+    "microsoft_onedrive",
+    "notion"
+  ]),
   displayName: z.string().min(2),
   externalWorkspaceId: z.string().min(2),
   accessToken: z.string().min(8),
@@ -57,6 +66,14 @@ export async function POST(
     return jsonError(parsedBody.error.message, 422, withRequestId(requestId));
   }
 
+  if (parsedBody.data.connectorType === "notion") {
+    return jsonError(
+      "Notion is deprecated and cannot be newly connected. Use Slack or Microsoft integrations.",
+      410,
+      withRequestId(requestId)
+    );
+  }
+
   const connector = await createConnectorAccount({
     id: randomUUID(),
     organizationId: orgId,
@@ -72,6 +89,43 @@ export async function POST(
     externalWorkspaceId: parsedBody.data.externalWorkspaceId
   });
 
+  if (
+    parsedBody.data.connectorType === "slack" ||
+    parsedBody.data.connectorType === "microsoft_teams" ||
+    parsedBody.data.connectorType === "microsoft_sharepoint" ||
+    parsedBody.data.connectorType === "microsoft_onedrive"
+  ) {
+    const sourceSystem = parsedBody.data.connectorType === "slack" ? "slack" : "microsoft";
+    await upsertUserSourceIdentity({
+      organizationId: orgId,
+      userId: session.userId,
+      sourceSystem,
+      sourceUserKey: `email:${session.email.toLowerCase()}`,
+      displayName: session.email,
+      createdBy: session.userId
+    });
+    await upsertUserSourceIdentity({
+      organizationId: orgId,
+      userId: session.userId,
+      sourceSystem,
+      sourceUserKey: `org:${orgId}:member`,
+      displayName: "Organization member access",
+      createdBy: session.userId
+    });
+  }
+
+  let queuedSync: { jobId: string; jobKey: string } | null = null;
+  try {
+    queuedSync = await enqueueSyncConnectorJob({
+      organizationId: orgId,
+      connectorAccountId: connector.id,
+      connectorType: connector.connectorType,
+      triggeredBy: session.userId
+    });
+  } catch (error) {
+    console.error("[ConnectorCreate] Failed to enqueue initial sync job", error);
+  }
+
   await writeAuditEvent({
     organizationId: orgId,
     actorId: session.userId,
@@ -80,13 +134,17 @@ export async function POST(
     entityId: connector.id,
     payload: {
       connectorType: connector.connectorType,
-      displayName: connector.displayName
+      displayName: connector.displayName,
+      syncQueued: Boolean(queuedSync),
+      queueJobId: queuedSync?.jobId ?? null
     }
   });
 
   return jsonOk(
     {
       connector: toPublicConnector(connector),
+      syncQueued: Boolean(queuedSync),
+      queueJobId: queuedSync?.jobId ?? null,
       allConnectors: (await listConnectorAccounts(orgId)).map(toPublicConnector)
     },
     withRequestId(requestId)

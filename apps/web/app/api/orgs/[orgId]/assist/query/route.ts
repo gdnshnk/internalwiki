@@ -9,6 +9,7 @@ import { safeError } from "@/lib/safe-log";
 import { enforceMutationSecurity } from "@/lib/security";
 import { createRequestLogger } from "@internalwiki/observability";
 import type { AssistantQueryStreamEvent } from "@internalwiki/core";
+import { listUserSourceIdentityKeys } from "@internalwiki/db";
 
 export async function POST(
   request: Request,
@@ -52,13 +53,21 @@ export async function POST(
   if (!parsed.success) {
     return jsonError(parsed.error.message, 422, withRequestId(requestId));
   }
+  const identityKeys = await listUserSourceIdentityKeys({
+    organizationId: orgId,
+    userId: session.userId
+  });
+  const viewerPrincipalKeys = Array.from(
+    new Set([`email:${session.email.toLowerCase()}`, ...identityKeys])
+  );
   const streamMode = new URL(request.url).searchParams.get("stream") === "1";
 
   if (!streamMode) {
     const response = await runAssistantQuery({
       organizationId: orgId,
       input: parsed.data,
-      actorId: session.userId
+      actorId: session.userId,
+      viewerPrincipalKeys
     });
 
     await writeAuditEvent({
@@ -72,7 +81,8 @@ export async function POST(
         sourceType: parsed.data.filters?.sourceType ?? null,
         citations: response.citations.length,
         claims: response.claims.length,
-        traceabilityCoverage: response.traceability.coverage
+        traceabilityCoverage: response.traceability.coverage,
+        verificationStatus: response.verification.status
       }
     });
 
@@ -106,7 +116,8 @@ export async function POST(
           const response = await runAssistantQuery({
             organizationId: orgId,
             input: parsed.data,
-            actorId: session.userId
+            actorId: session.userId,
+            viewerPrincipalKeys
           });
           requestLog.info(
             {
@@ -151,7 +162,8 @@ export async function POST(
               sourceType: parsed.data.filters?.sourceType ?? null,
               citations: response.citations.length,
               claims: response.claims.length,
-              traceabilityCoverage: response.traceability.coverage
+              traceabilityCoverage: response.traceability.coverage,
+              verificationStatus: response.verification.status
             }
           });
 

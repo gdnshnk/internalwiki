@@ -68,6 +68,16 @@ function buildMockResponse(input: {
       retrievalMs: 240,
       generationMs: 680
     },
+    verification: {
+      status: input.good ? "passed" : "blocked",
+      reasons: input.good ? [] : ["Insufficient citation support"],
+      citationCoverage: input.good ? 0.9 : 0.45,
+      unsupportedClaims: input.good ? 0 : 2
+    },
+    permissions: {
+      filteredOutCount: 0,
+      aclMode: "enforced"
+    },
     mode: input.mode,
     model: "eval-harness"
   };

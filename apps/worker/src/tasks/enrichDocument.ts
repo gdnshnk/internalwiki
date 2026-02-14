@@ -1,16 +1,18 @@
 import type { JobHelpers } from "graphile-worker";
 import { MockAiProvider, OpenAiProvider, embedTexts, type AiProvider } from "@internalwiki/ai";
-import { chunkText, computeSourceScore } from "@internalwiki/core";
+import { chunkText, computeSourceScore, type ConnectorType } from "@internalwiki/core";
 import { appendAuditEvent, upsertExternalItemAndDocuments, vectorToSqlLiteral } from "@internalwiki/db";
 
 type EnrichPayload = {
   organizationId: string;
   connectorAccountId: string;
-  connectorType: "google_drive" | "google_docs" | "notion";
+  connectorType: ConnectorType;
   syncRunId: string;
   externalId: string;
   checksum: string;
-  sourceType: "google_drive" | "google_docs" | "notion";
+  sourceType: ConnectorType;
+  sourceSystem?: "slack" | "microsoft";
+  aclPrincipalKeys?: string[];
   sourceUrl: string;
   canonicalSourceUrl?: string;
   title: string;
@@ -61,7 +63,7 @@ export async function enrichDocument(payload: EnrichPayload, helpers: JobHelpers
 
   const sourceScore = computeSourceScore({
     updatedAt: payload.sourceLastUpdatedAt ?? payload.updatedAt,
-    sourceAuthority: payload.sourceType === "notion" ? 0.8 : 0.9,
+    sourceAuthority: 0.9,
     authorAuthority: (payload.author ?? payload.owner).includes("lead") ? 0.85 : 0.7,
     citationCoverage: citations.length > 0 ? 1 : 0
   });
@@ -72,6 +74,8 @@ export async function enrichDocument(payload: EnrichPayload, helpers: JobHelpers
     externalId: payload.externalId,
     checksum: payload.checksum,
     sourceType: payload.sourceType,
+    sourceSystem: payload.sourceSystem,
+    aclPrincipalKeys: payload.aclPrincipalKeys,
     sourceUrl: payload.sourceUrl,
     canonicalSourceUrl: payload.canonicalSourceUrl,
     title: payload.title,

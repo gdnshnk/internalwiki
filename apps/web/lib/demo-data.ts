@@ -1,5 +1,6 @@
 import type { Citation, DocumentChunk, DocumentRecord, EvidenceItem, EvidenceReason } from "@internalwiki/core";
 import { computeSourceScore } from "@internalwiki/core";
+import type { ConnectorType } from "@internalwiki/core";
 import {
   getDocumentByIdCached,
   hashEmbedding,
@@ -20,7 +21,8 @@ export async function getDocumentById(orgId: string, docId: string): Promise<Doc
 export async function getChunkCandidates(params: {
   organizationId: string;
   question: string;
-  sourceType?: "google_docs" | "google_drive" | "notion";
+  sourceType?: ConnectorType;
+  viewerPrincipalKeys?: string[];
   queryEmbedding?: number[];
   dateRange?: { from?: string; to?: string };
   author?: string;
@@ -35,6 +37,7 @@ export async function getChunkCandidates(params: {
     queryText: params.question,
     queryVector,
     sourceType: params.sourceType,
+    viewerPrincipalKeys: params.viewerPrincipalKeys,
     limit: 8,
     dateRange: params.dateRange,
     author: params.author,
@@ -59,7 +62,7 @@ export async function getChunkCandidates(params: {
       doc.sourceScore?.total ??
       computeSourceScore({
         updatedAt: doc.updatedAt,
-        sourceAuthority: doc.sourceType === "notion" ? 0.8 : 0.9,
+        sourceAuthority: 0.9,
         authorAuthority: 0.75,
         citationCoverage: 0.7
       }).total,
@@ -84,9 +87,18 @@ export function mapChunkToCitation(chunk: DocumentChunk): Citation {
   };
 }
 
-function connectorFromSourceUrl(sourceUrl: string): "google_docs" | "google_drive" | "notion" {
-  if (sourceUrl.includes("notion.so")) {
-    return "notion";
+function connectorFromSourceUrl(sourceUrl: string): ConnectorType {
+  if (sourceUrl.includes("slack.com")) {
+    return "slack";
+  }
+  if (sourceUrl.includes("teams.microsoft.com")) {
+    return "microsoft_teams";
+  }
+  if (sourceUrl.includes("sharepoint.com")) {
+    return "microsoft_sharepoint";
+  }
+  if (sourceUrl.includes("onedrive.live.com")) {
+    return "microsoft_onedrive";
   }
   if (sourceUrl.includes("docs.google.com/document")) {
     return "google_docs";

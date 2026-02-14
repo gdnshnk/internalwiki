@@ -8,7 +8,10 @@ const filterItems: Array<{ label: string; value: SourceFilterValue }> = [
   { label: "All", value: "all" },
   { label: "Google Docs", value: "google_docs" },
   { label: "Google Drive", value: "google_drive" },
-  { label: "Notion", value: "notion" }
+  { label: "Slack", value: "slack" },
+  { label: "Teams", value: "microsoft_teams" },
+  { label: "SharePoint", value: "microsoft_sharepoint" },
+  { label: "OneDrive", value: "microsoft_onedrive" }
 ];
 
 export function SourceFilterChips(props: {

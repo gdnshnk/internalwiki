@@ -8,21 +8,15 @@ Monorepo for InternalWiki: web app, worker, connectors, AI adapters, and shared 
 - `apps/worker`: Background sync/enrichment workers
 - `packages/core`: Shared domain types, scoring, retrieval, RBAC utilities
 - `packages/ai`: Provider abstraction + OpenAI adapter
-- `packages/connectors`: Google and Notion connector adapters
+- `packages/connectors`: Google, Slack, and Microsoft connector adapters
 - `packages/db`: Postgres schema, migrations, and data access helpers
 - `infrastructure`: Environment, deployment, and runbook docs
 
 ## Quick start
 
 1. Install dependencies: `npm install`
-2. Copy env template: `cp infrastructure/.env.example .env`
-3. Run DB migrations:
-   - `psql "$DATABASE_URL" -f packages/db/migrations/0001_init.sql`
-   - `psql "$DATABASE_URL" -f packages/db/migrations/0002_runtime_indexes.sql`
-   - `psql "$DATABASE_URL" -f packages/db/migrations/0003_auth_security.sql`
-   - `psql "$DATABASE_URL" -f packages/db/migrations/0004_quality_feedback.sql`
-   - `psql "$DATABASE_URL" -f packages/db/migrations/0005_session_maintenance.sql`
-   - `psql "$DATABASE_URL" -f packages/db/migrations/0006_traceability_marketing.sql`
+2. Copy env template: `cp .env.example .env`
+3. Run DB migrations: `npm run db:migrate`
 4. Run web app: `npm run dev:web`
 5. Run worker: `npm run dev:worker`
 
@@ -35,4 +29,5 @@ Monorepo for InternalWiki: web app, worker, connectors, AI adapters, and shared 
 ## Notes
 
 - MVP uses a multi-tenant org model and requires `organization_id` filtering on all domain data.
-- External integrations are scaffolded with clear interfaces and can be extended with real OAuth token storage and API client implementations.
+- Supported connector scope is Google Workspace, Slack, and Microsoft 365 (Teams, SharePoint, OneDrive).
+- Notion is deprecated now and will be fully sunset 60 days after the deprecation release.

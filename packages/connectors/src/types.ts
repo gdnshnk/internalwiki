@@ -27,6 +27,8 @@ export type NormalizedExternalItem = {
   sourceFormat?: string;
   owner: string;
   author?: string;
+  sourceSystem?: "slack" | "microsoft";
+  aclPrincipalKeys?: string[];
   mimeType: string;
   content: string;
 };

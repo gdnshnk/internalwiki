@@ -23,7 +23,7 @@ export function AppOnboardingChecklist(props: {
       {
         id: "connect",
         title: "Connect your first source",
-        description: "Add Google Workspace or Notion so InternalWiki can ingest trusted company knowledge.",
+        description: "Add Google Workspace, Slack, or Microsoft 365 so InternalWiki can ingest trusted company knowledge.",
         done: props.progress.connected,
         href: "/app/settings/connectors",
         cta: "Open connectors"

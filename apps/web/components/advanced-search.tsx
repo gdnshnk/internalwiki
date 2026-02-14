@@ -11,7 +11,14 @@ export type AdvancedSearchFilters = {
   documentIds?: string[];
 };
 
-const CONNECTOR_TYPES: ConnectorType[] = ["google_docs", "google_drive", "notion"];
+const CONNECTOR_TYPES: ConnectorType[] = [
+  "google_docs",
+  "google_drive",
+  "slack",
+  "microsoft_teams",
+  "microsoft_sharepoint",
+  "microsoft_onedrive"
+];
 
 function toConnectorType(value: string): ConnectorType | undefined {
   return CONNECTOR_TYPES.includes(value as ConnectorType) ? (value as ConnectorType) : undefined;
@@ -74,7 +81,10 @@ export function AdvancedSearchFilters(props: {
               <option value="">All Sources</option>
               <option value="google_docs">Google Docs</option>
               <option value="google_drive">Google Drive</option>
-              <option value="notion">Notion</option>
+              <option value="slack">Slack</option>
+              <option value="microsoft_teams">Microsoft Teams</option>
+              <option value="microsoft_sharepoint">Microsoft SharePoint</option>
+              <option value="microsoft_onedrive">Microsoft OneDrive</option>
             </select>
           </div>
 

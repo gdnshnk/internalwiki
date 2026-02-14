@@ -22,7 +22,7 @@ export default function PricingPage() {
           <h3>What is included</h3>
           <ul className="marketing-list">
             <li>Assistant search with citations and trust score</li>
-            <li>Google Workspace + Notion ingestion</li>
+            <li>Google Workspace + Slack + Microsoft 365 ingestion</li>
             <li>15-minute sync cadence and review queue</li>
             <li>Org isolation and audit trail visibility</li>
           </ul>

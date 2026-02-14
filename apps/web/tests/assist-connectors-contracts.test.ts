@@ -10,6 +10,8 @@ const {
   writeAuditEventMock,
   createConnectorAccountMock,
   listConnectorAccountsMock,
+  upsertUserSourceIdentityMock,
+  enqueueSyncConnectorJobMock,
   encryptSecretMock,
   toPublicConnectorMock
 } = vi.hoisted(() => ({
@@ -21,6 +23,8 @@ const {
   writeAuditEventMock: vi.fn(),
   createConnectorAccountMock: vi.fn(),
   listConnectorAccountsMock: vi.fn(),
+  upsertUserSourceIdentityMock: vi.fn(),
+  enqueueSyncConnectorJobMock: vi.fn(),
   encryptSecretMock: vi.fn((input: string) => `enc:${input}`),
   toPublicConnectorMock: vi.fn((value: unknown) => value)
 }));
@@ -47,7 +51,16 @@ vi.mock("@/lib/assistant-query", () => ({
     mode: z.enum(["ask", "summarize", "trace"]),
     filters: z
       .object({
-        sourceType: z.enum(["google_docs", "google_drive", "notion"]).optional()
+        sourceType: z
+          .enum([
+            "google_docs",
+            "google_drive",
+            "slack",
+            "microsoft_teams",
+            "microsoft_sharepoint",
+            "microsoft_onedrive"
+          ])
+          .optional()
       })
       .optional()
   }),
@@ -56,6 +69,10 @@ vi.mock("@/lib/assistant-query", () => ({
 
 vi.mock("@/lib/audit", () => ({
   writeAuditEvent: writeAuditEventMock
+}));
+
+vi.mock("@/lib/worker-jobs", () => ({
+  enqueueSyncConnectorJob: enqueueSyncConnectorJobMock
 }));
 
 vi.mock("@/lib/crypto", () => ({
@@ -68,7 +85,8 @@ vi.mock("@/lib/connector-response", () => ({
 
 vi.mock("@internalwiki/db", () => ({
   createConnectorAccount: createConnectorAccountMock,
-  listConnectorAccounts: listConnectorAccountsMock
+  listConnectorAccounts: listConnectorAccountsMock,
+  upsertUserSourceIdentity: upsertUserSourceIdentityMock
 }));
 
 import { POST as assistQueryPost } from "@/app/api/orgs/[orgId]/assist/query/route";
@@ -165,8 +183,8 @@ describe("assist and connector API contracts", () => {
           origin: "http://localhost"
         },
         body: JSON.stringify({
-          connectorType: "notion",
-          displayName: "Notion Workspace",
+          connectorType: "slack",
+          displayName: "Slack Workspace",
           externalWorkspaceId: "workspace_1",
           accessToken: "token_value",
           refreshToken: "refresh_value"
@@ -190,8 +208,8 @@ describe("assist and connector API contracts", () => {
           origin: "http://localhost"
         },
         body: JSON.stringify({
-          connectorType: "notion",
-          displayName: "Notion Workspace",
+          connectorType: "slack",
+          displayName: "Slack Workspace",
           externalWorkspaceId: "workspace_1",
           accessToken: "token_value",
           refreshToken: "refresh_value"
@@ -203,5 +221,83 @@ describe("assist and connector API contracts", () => {
     expect(response.status).toBe(429);
     expect(response.headers.get("Retry-After")).toBe("3");
     expect(createConnectorAccountMock).not.toHaveBeenCalled();
+  });
+
+  it("returns 410 when attempting to create deprecated notion connector", async () => {
+    const response = await createConnectorPost(
+      new Request("http://localhost/api/orgs/org_1/connectors", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "http://localhost"
+        },
+        body: JSON.stringify({
+          connectorType: "notion",
+          displayName: "Notion Workspace",
+          externalWorkspaceId: "workspace_1",
+          accessToken: "token_value",
+          refreshToken: "refresh_value"
+        })
+      }),
+      { params: Promise.resolve({ orgId: "org_1" }) }
+    );
+
+    expect(response.status).toBe(410);
+    expect(createConnectorAccountMock).not.toHaveBeenCalled();
+  });
+
+  it("creates connector and queues initial sync for deterministic setup", async () => {
+    createConnectorAccountMock.mockResolvedValueOnce({
+      id: "connector_1",
+      organizationId: "org_1",
+      connectorType: "slack",
+      status: "active",
+      encryptedAccessToken: "enc:token_value",
+      encryptedRefreshToken: "enc:refresh_value",
+      tokenExpiresAt: null,
+      syncCursor: null,
+      lastSyncedAt: null,
+      displayName: "Slack Workspace",
+      externalWorkspaceId: "workspace_1",
+      createdAt: "2026-02-14T00:00:00.000Z",
+      updatedAt: "2026-02-14T00:00:00.000Z"
+    });
+    listConnectorAccountsMock.mockResolvedValueOnce([]);
+    enqueueSyncConnectorJobMock.mockResolvedValueOnce({
+      jobId: "job_1",
+      jobKey: "sync:org_1:connector_1:bucket"
+    });
+
+    const response = await createConnectorPost(
+      new Request("http://localhost/api/orgs/org_1/connectors", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          origin: "http://localhost"
+        },
+        body: JSON.stringify({
+          connectorType: "slack",
+          displayName: "Slack Workspace",
+          externalWorkspaceId: "workspace_1",
+          accessToken: "token_value",
+          refreshToken: "refresh_value"
+        })
+      }),
+      { params: Promise.resolve({ orgId: "org_1" }) }
+    );
+
+    expect(response.status).toBe(200);
+    expect(upsertUserSourceIdentityMock).toHaveBeenCalledTimes(2);
+    expect(enqueueSyncConnectorJobMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizationId: "org_1",
+        connectorAccountId: "connector_1",
+        connectorType: "slack",
+        triggeredBy: "user_1"
+      })
+    );
+    const body = (await response.json()) as { syncQueued?: boolean; queueJobId?: string };
+    expect(body.syncQueued).toBe(true);
+    expect(body.queueJobId).toBe("job_1");
   });
 });

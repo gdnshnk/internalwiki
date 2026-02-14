@@ -8,13 +8,23 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { resolveRequestId, withRequestId } from "@/lib/request-id";
 import { enforceMutationSecurity } from "@/lib/security";
 import { randomUUID } from "node:crypto";
+import { listUserSourceIdentityKeys } from "@internalwiki/db";
 
 const chatInputSchema = z.object({
   query: z.string().min(4),
   threadId: z.string().min(8).optional(),
   filters: z
     .object({
-      sourceType: z.enum(["google_docs", "google_drive", "notion"]).optional()
+      sourceType: z
+        .enum([
+          "google_docs",
+          "google_drive",
+          "slack",
+          "microsoft_teams",
+          "microsoft_sharepoint",
+          "microsoft_onedrive"
+        ])
+        .optional()
     })
     .optional()
 });
@@ -56,6 +66,14 @@ export async function POST(
     return rateLimitError({ retryAfterMs: rate.retryAfterMs, requestId });
   }
 
+  const identityKeys = await listUserSourceIdentityKeys({
+    organizationId: orgId,
+    userId: session.userId
+  });
+  const viewerPrincipalKeys = Array.from(
+    new Set([`email:${session.email.toLowerCase()}`, ...identityKeys])
+  );
+
   const response = await runAssistantQuery({
     organizationId: orgId,
     input: {
@@ -64,7 +82,8 @@ export async function POST(
       threadId: parsed.data.threadId,
       filters: parsed.data.filters
     },
-    actorId: session.userId
+    actorId: session.userId,
+    viewerPrincipalKeys
   });
 
   await writeAuditEvent({
@@ -77,7 +96,8 @@ export async function POST(
       sourceType: parsed.data.filters?.sourceType ?? null,
       citations: response.citations.length,
       claims: response.claims.length,
-      traceabilityCoverage: response.traceability.coverage
+      traceabilityCoverage: response.traceability.coverage,
+      verificationStatus: response.verification.status
     }
   });
 
@@ -91,7 +111,9 @@ export async function POST(
       threadId: response.threadId,
       messageId: response.messageId,
       grounding: response.grounding,
-      traceability: response.traceability
+      traceability: response.traceability,
+      verification: response.verification,
+      permissions: response.permissions
     },
     withRequestId(requestId)
   );

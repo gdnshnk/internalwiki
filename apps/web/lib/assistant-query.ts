@@ -7,7 +7,7 @@ import type {
   ExpandedQuery
 } from "@internalwiki/core";
 import { expandQuery, generateQueryVariations } from "@internalwiki/core";
-import { persistAnswerClaims, persistGroundedAnswer } from "@internalwiki/db";
+import { createAnswerVerificationRun, persistAnswerClaims, persistGroundedAnswer } from "@internalwiki/db";
 import { embedQueryText, getAiProvider } from "@/lib/ai";
 import { buildEvidenceItems, getChunkCandidates } from "@/lib/demo-data";
 
@@ -17,7 +17,16 @@ export const assistantQuerySchema = z.object({
   threadId: z.string().min(8).optional(),
   filters: z
     .object({
-      sourceType: z.enum(["google_docs", "google_drive", "notion"]).optional(),
+      sourceType: z
+        .enum([
+          "google_docs",
+          "google_drive",
+          "slack",
+          "microsoft_teams",
+          "microsoft_sharepoint",
+          "microsoft_onedrive"
+        ])
+        .optional(),
       dateRange: z
         .object({
           from: z.string().optional(),
@@ -43,19 +52,22 @@ function fallbackCitationsFromSources(input: {
 }
 
 function augmentQuestionForMode(input: AssistantQueryRequest): string {
+  const summariesOnlyPolicy =
+    "Policy: summaries only. Do not generate action plans, implementation steps, or task lists.";
+
   if (input.mode === "summarize") {
-    return `Create an executive summary in 4-6 bullets with key decisions, owners, and risks, all grounded in citations.\nQuestion: ${input.query}`;
+    return `Create a concise executive summary in 4-6 bullets with key points, owners, and risks, all grounded in citations.\n${summariesOnlyPolicy}\nQuestion: ${input.query}`;
   }
 
   if (input.mode === "trace") {
-    return `Trace claims to exact evidence. Prefer claim-to-source mapping over narrative.\nQuestion: ${input.query}`;
+    return `Provide an evidence trace summary. Map claims to sources clearly, keep output concise, and avoid prescriptive next steps.\n${summariesOnlyPolicy}\nQuestion: ${input.query}`;
   }
 
-  return `Provide a direct grounded answer, then 2-4 bullets with sources.\nQuestion: ${input.query}`;
+  return `Provide a grounded summary answer followed by 2-4 cited bullets.\n${summariesOnlyPolicy}\nQuestion: ${input.query}`;
 }
 
 function strictGroundingPrompt(input: string): string {
-  return `${input}\n\nStrict grounding: include only claims supported by context; if evidence is insufficient, say so explicitly.`;
+  return `${input}\n\nStrict grounding: include only claims supported by context; if evidence is insufficient, say so explicitly. Keep response summary-only.`;
 }
 
 function splitSentences(text: string): string[] {
@@ -241,6 +253,7 @@ export async function runAssistantQuery(params: {
   organizationId: string;
   input: AssistantQueryRequest;
   actorId?: string;
+  viewerPrincipalKeys?: string[];
 }): Promise<AssistantQueryResponse> {
   const retrievalStart = performance.now();
   const provider = getAiProvider();
@@ -267,6 +280,7 @@ export async function runAssistantQuery(params: {
     organizationId: params.organizationId,
     question: expandedQuery.original,
     sourceType: params.input.filters?.sourceType,
+    viewerPrincipalKeys: params.viewerPrincipalKeys,
     queryEmbedding,
     dateRange: params.input.filters?.dateRange,
     author: params.input.filters?.author,
@@ -284,6 +298,7 @@ export async function runAssistantQuery(params: {
           organizationId: params.organizationId,
           question: variation,
           sourceType: params.input.filters?.sourceType,
+          viewerPrincipalKeys: params.viewerPrincipalKeys,
           queryEmbedding: variationEmbedding,
           dateRange: params.input.filters?.dateRange,
           author: params.input.filters?.author,
@@ -363,18 +378,6 @@ export async function runAssistantQuery(params: {
   }
 
   const generationMs = Math.round(performance.now() - generationStart);
-  if (citations.length === 0) {
-    throw new Error("Assistant response rejected: missing citations for generated claim.");
-  }
-
-  if (grounding.citationCoverage < 0.8) {
-    grounded = {
-      ...grounded,
-      answer:
-        "Insufficient evidence in available sources to provide a fully grounded answer. Try broadening filters or syncing additional documents."
-    };
-  }
-
   const claims = buildClaims({
     answer: grounded.answer,
     citations,
@@ -385,6 +388,29 @@ export async function runAssistantQuery(params: {
     sources,
     citationCoverage: grounding.citationCoverage
   });
+
+  const verificationReasons: string[] = [];
+  if (citations.length === 0) {
+    verificationReasons.push("No citations produced by retrieval context.");
+  }
+  if (grounding.citationCoverage < 0.8) {
+    verificationReasons.push(
+      `Citation coverage ${grounding.citationCoverage.toFixed(2)} is below required threshold 0.80.`
+    );
+  }
+  if (grounding.unsupportedClaimCount > 0) {
+    verificationReasons.push(`${grounding.unsupportedClaimCount} claim(s) were not fully supported by cited evidence.`);
+  }
+
+  const verificationStatus: "passed" | "blocked" =
+    verificationReasons.length === 0 ? "passed" : "blocked";
+  if (verificationStatus === "blocked") {
+    grounded = {
+      ...grounded,
+      answer:
+        "Answer blocked by verification safeguards. Sync more sources or broaden your filters to reach required citation support."
+    };
+  }
 
   const citationTrust = averageCitationTrust(citations, chunkSourceScore);
   const confidence = computeAnswerConfidence({
@@ -413,6 +439,16 @@ export async function runAssistantQuery(params: {
       retrievalMs,
       generationMs
     },
+    verification: {
+      status: verificationStatus,
+      reasons: verificationReasons,
+      citationCoverage: grounding.citationCoverage,
+      unsupportedClaims: grounding.unsupportedClaimCount
+    },
+    permissions: {
+      filteredOutCount: 0,
+      aclMode: "enforced"
+    },
     mode: params.input.mode,
     model: provider.name
   };
@@ -437,6 +473,16 @@ export async function runAssistantQuery(params: {
     chatMessageId: persisted.assistantMessageId,
     claims: response.claims,
     actorId: params.actorId
+  });
+  await createAnswerVerificationRun({
+    organizationId: params.organizationId,
+    chatMessageId: persisted.assistantMessageId,
+    status: response.verification.status,
+    reasons: response.verification.reasons,
+    citationCoverage: response.verification.citationCoverage,
+    unsupportedClaims: response.verification.unsupportedClaims,
+    permissionFilteredOutCount: response.permissions.filteredOutCount,
+    createdBy: params.actorId
   });
 
   return response;

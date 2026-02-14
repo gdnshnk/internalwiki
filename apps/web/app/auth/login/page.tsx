@@ -64,13 +64,8 @@ export default async function LoginPage({
               fontSize: "0.78rem"
             }}
           >
-{`cp infrastructure/.env.example .env
-psql "$DATABASE_URL" -f packages/db/migrations/0001_init.sql
-psql "$DATABASE_URL" -f packages/db/migrations/0002_runtime_indexes.sql
-psql "$DATABASE_URL" -f packages/db/migrations/0003_auth_security.sql
-psql "$DATABASE_URL" -f packages/db/migrations/0004_quality_feedback.sql
-psql "$DATABASE_URL" -f packages/db/migrations/0005_session_maintenance.sql
-psql "$DATABASE_URL" -f packages/db/migrations/0006_traceability_marketing.sql
+{`cp .env.example .env
+npm run db:migrate
 npm run dev:web`}
           </pre>
         </section>
