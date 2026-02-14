@@ -7,6 +7,12 @@ type SyncConnectorJobPayload = {
   triggeredBy?: string;
 };
 
+type AuditExportJobPayload = {
+  organizationId: string;
+  exportJobId: string;
+  requestedBy?: string;
+};
+
 type WorkerUtilsLike = {
   addJob: (
     identifier: string,
@@ -54,6 +60,21 @@ export async function enqueueSyncConnectorJob(payload: SyncConnectorJobPayload):
   const job = await workerUtils.addJob("sync-connector", payload, {
     maxAttempts: 5,
     queueName: `sync:${payload.connectorAccountId}`,
+    jobKey
+  });
+
+  return {
+    jobId: job.id,
+    jobKey
+  };
+}
+
+export async function enqueueAuditExportJob(payload: AuditExportJobPayload): Promise<{ jobId: string; jobKey: string }> {
+  const workerUtils = await getWorkerUtils();
+  const jobKey = `audit-export:${payload.organizationId}:${payload.exportJobId}`;
+  const job = await workerUtils.addJob("audit-export-generate", payload, {
+    maxAttempts: 3,
+    queueName: `audit-export:${payload.organizationId}`,
     jobKey
   });
 

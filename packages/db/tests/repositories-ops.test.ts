@@ -14,13 +14,18 @@ vi.mock("../src/client", () => ({
 import {
   checkAndIncrementApiRateLimit,
   createUserSession,
+  createIdempotencyKeyRecord,
   getActiveUserSession,
   getConnectorSyncStats,
+  getIdempotencyKeyRecord,
+  getOrCreateSessionPolicy,
+  listAuditExportJobs,
   getUserOnboardingCompletedAt,
   markUserOnboardingCompleted,
   getRecentDeadLetterEvents,
   getReviewQueueStats,
-  revokeUserSession
+  revokeUserSession,
+  verifyAuditEventIntegrity
 } from "../src/repositories";
 
 describe("db repositories launch-critical helpers", () => {
@@ -173,5 +178,119 @@ describe("db repositories launch-critical helpers", () => {
 
     expect(first).toBe("2026-02-14T16:00:00.000Z");
     expect(second).toBe("2026-02-14T16:00:00.000Z");
+  });
+
+  it("returns default session policy shape", async () => {
+    queryMock.mockResolvedValueOnce([
+      {
+        organization_id: "org_1",
+        session_max_age_minutes: 43200,
+        session_idle_timeout_minutes: 1440,
+        concurrent_session_limit: 10,
+        force_reauth_after_minutes: 10080,
+        created_at: "2026-02-14T00:00:00.000Z",
+        updated_at: "2026-02-14T00:00:00.000Z"
+      }
+    ]);
+
+    const policy = await getOrCreateSessionPolicy("org_1");
+    expect(policy.concurrentSessionLimit).toBe(10);
+    expect(policy.forceReauthAfterMinutes).toBe(10080);
+  });
+
+  it("maps audit export jobs list", async () => {
+    queryMock.mockResolvedValueOnce([
+      {
+        id: "export_1",
+        organization_id: "org_1",
+        requested_by: "user_1",
+        status: "completed",
+        filters: {},
+        rows_exported: 28,
+        started_at: "2026-02-14T00:00:00.000Z",
+        completed_at: "2026-02-14T00:01:00.000Z",
+        download_url: "inline://audit-export/export_1",
+        error_message: null,
+        created_at: "2026-02-14T00:00:00.000Z",
+        updated_at: "2026-02-14T00:01:00.000Z"
+      }
+    ]);
+
+    const jobs = await listAuditExportJobs("org_1", 5);
+    expect(jobs[0]?.rowsExported).toBe(28);
+    expect(jobs[0]?.status).toBe("completed");
+  });
+
+  it("validates audit hash chain integrity", async () => {
+    queryMock.mockResolvedValueOnce([
+      {
+        id: "event_a",
+        actor_id: "user_1",
+        event_type: "security.session_policy.updated",
+        entity_type: "org_security_policies",
+        entity_id: "org_1",
+        payload: { concurrentSessionLimit: 10 },
+        prev_hash: null,
+        event_hash: "38d55ca706cfe566042023fcb8aee302f84d63d7d363ca6aa8d3dc7ca2e66787"
+      }
+    ]);
+
+    const result = await verifyAuditEventIntegrity({ organizationId: "org_1", limit: 50 });
+    expect(result.valid).toBe(true);
+    expect(result.checked).toBe(1);
+  });
+
+  it("returns idempotency key replay metadata", async () => {
+    queryMock.mockResolvedValueOnce([
+      {
+        id: "idem_1",
+        organization_id: "org_1",
+        method: "POST",
+        path: "/api/orgs/org_1/security/session-policies",
+        key_hash: "abc",
+        request_hash: "def",
+        status: 200,
+        response_body: { ok: true },
+        response_headers: { "x-request-id": "r1" },
+        expires_at: "2026-02-15T00:00:00.000Z",
+        created_at: "2026-02-14T00:00:00.000Z",
+        updated_at: "2026-02-14T00:00:01.000Z"
+      }
+    ]);
+
+    const replay = await getIdempotencyKeyRecord({
+      organizationId: "org_1",
+      method: "POST",
+      path: "/api/orgs/org_1/security/session-policies",
+      keyHash: "abc"
+    });
+
+    expect(replay?.status).toBe(200);
+    expect(replay?.requestHash).toBe("def");
+  });
+
+  it("reports whether an idempotency reservation was inserted", async () => {
+    queryMock.mockResolvedValueOnce([{ id: "idem_1" }]).mockResolvedValueOnce([]);
+
+    const inserted = await createIdempotencyKeyRecord({
+      organizationId: "org_1",
+      method: "POST",
+      path: "/api/orgs/org_1/security/session-policies",
+      keyHash: "abc",
+      requestHash: "def",
+      createdBy: "user_1"
+    });
+
+    const deduped = await createIdempotencyKeyRecord({
+      organizationId: "org_1",
+      method: "POST",
+      path: "/api/orgs/org_1/security/session-policies",
+      keyHash: "abc",
+      requestHash: "def",
+      createdBy: "user_1"
+    });
+
+    expect(inserted).toBe(true);
+    expect(deduped).toBe(false);
   });
 });

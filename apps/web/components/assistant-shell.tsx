@@ -161,6 +161,28 @@ export function AssistantShell(props: { children: ReactNode; recentThreads: Chat
                   Connectors
                 </Link>
                 <Link
+                  href="/app/settings/security"
+                  className="settings-popover__item"
+                  role="menuitem"
+                  onClick={() => {
+                    setSettingsOpen(false);
+                    setMobileNavOpen(false);
+                  }}
+                >
+                  Security
+                </Link>
+                <Link
+                  href="/app/settings/ops"
+                  className="settings-popover__item"
+                  role="menuitem"
+                  onClick={() => {
+                    setSettingsOpen(false);
+                    setMobileNavOpen(false);
+                  }}
+                >
+                  Ops
+                </Link>
+                <Link
                   href="/app?onboarding=1"
                   className="settings-popover__item"
                   role="menuitem"

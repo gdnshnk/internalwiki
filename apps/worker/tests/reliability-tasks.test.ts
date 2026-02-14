@@ -5,12 +5,30 @@ const {
   appendAuditEventMock,
   markConnectorReauthRequiredMock,
   cleanupExpiredSessionsMock,
-  cleanupStaleRateLimitsMock
+  cleanupStaleRateLimitsMock,
+  createIncidentEventMock,
+  getConnectorSyncStatsMock,
+  getRecentDeadLetterEventsMock,
+  listOpenIncidentEventsMock,
+  listOrganizationIdsMock,
+  listStuckSyncRunsMock,
+  getAuditExportJobMock,
+  listAuditEventsForExportMock,
+  updateAuditExportJobStatusMock
 } = vi.hoisted(() => ({
   appendAuditEventMock: vi.fn(),
   markConnectorReauthRequiredMock: vi.fn(),
   cleanupExpiredSessionsMock: vi.fn(),
-  cleanupStaleRateLimitsMock: vi.fn()
+  cleanupStaleRateLimitsMock: vi.fn(),
+  createIncidentEventMock: vi.fn(),
+  getConnectorSyncStatsMock: vi.fn(),
+  getRecentDeadLetterEventsMock: vi.fn(),
+  listOpenIncidentEventsMock: vi.fn(),
+  listOrganizationIdsMock: vi.fn(),
+  listStuckSyncRunsMock: vi.fn(),
+  getAuditExportJobMock: vi.fn(),
+  listAuditEventsForExportMock: vi.fn(),
+  updateAuditExportJobStatusMock: vi.fn()
 }));
 
 vi.mock("@internalwiki/db", () => ({
@@ -21,7 +39,16 @@ vi.mock("@internalwiki/db", () => ({
   markConnectorReauthRequired: markConnectorReauthRequiredMock,
   startConnectorSyncRun: vi.fn(),
   cleanupExpiredSessions: cleanupExpiredSessionsMock,
-  cleanupStaleRateLimits: cleanupStaleRateLimitsMock
+  cleanupStaleRateLimits: cleanupStaleRateLimitsMock,
+  createIncidentEvent: createIncidentEventMock,
+  getConnectorSyncStats: getConnectorSyncStatsMock,
+  getRecentDeadLetterEvents: getRecentDeadLetterEventsMock,
+  listOpenIncidentEvents: listOpenIncidentEventsMock,
+  listOrganizationIds: listOrganizationIdsMock,
+  listStuckSyncRuns: listStuckSyncRunsMock,
+  getAuditExportJob: getAuditExportJobMock,
+  listAuditEventsForExport: listAuditEventsForExportMock,
+  updateAuditExportJobStatus: updateAuditExportJobStatusMock
 }));
 
 vi.mock("@internalwiki/connectors", async () => {
@@ -35,6 +62,9 @@ vi.mock("@internalwiki/connectors", async () => {
 import { maintenanceAuthCleanup } from "../src/tasks/maintenanceAuthCleanup";
 import { classifySyncError } from "../src/tasks/syncConnector";
 import { syncDeadLetter } from "../src/tasks/syncDeadLetter";
+import { incidentRollup } from "../src/tasks/incidentRollup";
+import { retryStuckSync } from "../src/tasks/retryStuckSync";
+import { auditExportGenerate } from "../src/tasks/auditExportGenerate";
 
 describe("worker reliability tasks", () => {
   beforeEach(() => {
@@ -95,5 +125,95 @@ describe("worker reliability tasks", () => {
     expect(cleanupExpiredSessionsMock).toHaveBeenCalledWith(2500);
     expect(cleanupStaleRateLimitsMock).toHaveBeenCalled();
     expect(info).toHaveBeenCalledWith(expect.stringContaining("expiredSessions=8"));
+  });
+
+  it("creates incident events when sync reliability thresholds are breached", async () => {
+    listOrganizationIdsMock.mockResolvedValueOnce(["org_1"]);
+    getConnectorSyncStatsMock.mockResolvedValueOnce({
+      last24h: {
+        total: 10,
+        completed: 3,
+        failed: 7,
+        running: 0,
+        failureByClassification: { transient: 4, auth: 2, payload: 1, unknown: 0 }
+      },
+      last7d: {
+        total: 70,
+        completed: 60,
+        failed: 10,
+        running: 0,
+        failureByClassification: { transient: 7, auth: 2, payload: 1, unknown: 0 }
+      }
+    });
+    getRecentDeadLetterEventsMock.mockResolvedValueOnce({ last24h: 3, last7d: 6 });
+    listOpenIncidentEventsMock.mockResolvedValueOnce([]);
+
+    await incidentRollup(
+      {},
+      {
+        logger: { info: vi.fn() }
+      } as any
+    );
+
+    expect(createIncidentEventMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries stuck sync runs and writes audit events", async () => {
+    listStuckSyncRunsMock.mockResolvedValueOnce([
+      {
+        runId: "run_1",
+        organizationId: "org_1",
+        connectorAccountId: "conn_1",
+        connectorType: "google_docs",
+        startedAt: "2026-02-14T00:00:00.000Z"
+      }
+    ]);
+
+    const addJob = vi.fn().mockResolvedValue({ id: "job_retry_1" });
+    await retryStuckSync(
+      {},
+      {
+        addJob,
+        logger: { info: vi.fn() }
+      } as any
+    );
+
+    expect(addJob).toHaveBeenCalledTimes(1);
+    expect(appendAuditEventMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: "connector.sync.retry_stuck",
+        organizationId: "org_1"
+      })
+    );
+  });
+
+  it("processes queued audit export jobs", async () => {
+    getAuditExportJobMock.mockResolvedValueOnce({
+      id: "export_1",
+      organizationId: "org_1",
+      status: "queued"
+    });
+    listAuditEventsForExportMock.mockResolvedValueOnce([
+      { id: "a1" },
+      { id: "a2" }
+    ]);
+
+    await auditExportGenerate(
+      {
+        organizationId: "org_1",
+        exportJobId: "export_1"
+      },
+      {
+        logger: { info: vi.fn(), warn: vi.fn() }
+      } as any
+    );
+
+    expect(updateAuditExportJobStatusMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        jobId: "export_1",
+        status: "completed",
+        rowsExported: 2
+      })
+    );
   });
 });

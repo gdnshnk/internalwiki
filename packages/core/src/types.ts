@@ -315,3 +315,56 @@ export type OpsSummaryResponse = {
     last7d: number;
   };
 };
+
+export type SloSummaryMetric = {
+  name: "api_availability" | "assist_latency_p95_ms" | "sync_success_rate" | "queue_lag_seconds";
+  target: number;
+  actual: number;
+  unit: "percent" | "milliseconds" | "seconds";
+  status: "pass" | "warning" | "breach";
+};
+
+export type SloSummary = {
+  organizationId: string;
+  generatedAt: string;
+  burnRate: number;
+  openIncidentCount: number;
+  metrics: SloSummaryMetric[];
+};
+
+export type IncidentSummary = {
+  id: string;
+  organizationId: string;
+  severity: "info" | "warning" | "critical";
+  eventType: string;
+  status: "open" | "resolved";
+  summary: string;
+  occurredAt: string;
+  resolvedAt?: string;
+  metadata: Record<string, unknown>;
+};
+
+export type AuditExportJob = {
+  id: string;
+  organizationId: string;
+  requestedBy?: string;
+  status: "queued" | "running" | "completed" | "failed";
+  filters: Record<string, unknown>;
+  rowsExported?: number;
+  startedAt?: string;
+  completedAt?: string;
+  downloadUrl?: string;
+  errorMessage?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type SessionPolicy = {
+  organizationId: string;
+  sessionMaxAgeMinutes: number;
+  sessionIdleTimeoutMinutes: number;
+  concurrentSessionLimit: number;
+  forceReauthAfterMinutes: number;
+  createdAt: string;
+  updatedAt: string;
+};

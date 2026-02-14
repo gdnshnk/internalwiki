@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const isProduction = process.env.NODE_ENV === "production";
+const cspMode = process.env.INTERNALWIKI_CSP_MODE === "report-only" ? "report-only" : "strict";
 
 const contentSecurityPolicy = [
   "default-src 'self'",
@@ -17,7 +18,7 @@ const contentSecurityPolicy = [
 
 const headers = [
   {
-    key: "Content-Security-Policy",
+    key: cspMode === "report-only" ? "Content-Security-Policy-Report-Only" : "Content-Security-Policy",
     value: contentSecurityPolicy
   },
   {

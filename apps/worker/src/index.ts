@@ -4,6 +4,9 @@ import { enrichDocument } from "./tasks/enrichDocument";
 import { scheduleConnectorSyncs } from "./tasks/scheduleConnectorSyncs";
 import { syncDeadLetter } from "./tasks/syncDeadLetter";
 import { maintenanceAuthCleanup } from "./tasks/maintenanceAuthCleanup";
+import { auditExportGenerate } from "./tasks/auditExportGenerate";
+import { incidentRollup } from "./tasks/incidentRollup";
+import { retryStuckSync } from "./tasks/retryStuckSync";
 
 const taskList: TaskList = {
   "schedule-connector-syncs": async (payload, helpers) => {
@@ -20,6 +23,15 @@ const taskList: TaskList = {
   },
   "maintenance-auth-cleanup": async (payload, helpers) => {
     await maintenanceAuthCleanup(payload as Record<string, never>, helpers);
+  },
+  "audit-export-generate": async (payload, helpers) => {
+    await auditExportGenerate(payload as never, helpers);
+  },
+  "incident-rollup": async (payload, helpers) => {
+    await incidentRollup(payload as Record<string, never>, helpers);
+  },
+  "retry-stuck-sync": async (payload, helpers) => {
+    await retryStuckSync(payload as Record<string, never>, helpers);
   }
 };
 
@@ -36,6 +48,8 @@ async function main(): Promise<void> {
     pollInterval: 2000,
     crontab: `
 */15 * * * * schedule-connector-syncs {}
+*/30 * * * * incident-rollup {}
+*/10 * * * * retry-stuck-sync {}
 0 * * * * maintenance-auth-cleanup {}
 `
   });

@@ -1,12 +1,16 @@
 import type {
   AnswerClaim,
+  AuditExportJob,
   ChatThreadSummary,
   ConnectorSyncRunStatus,
   ConnectorType,
+  IncidentSummary,
   OrganizationDomain,
   OrgRole,
   RegistrationInvite,
   ReviewAction,
+  SessionPolicy,
+  SloSummary,
   SourceScore
 } from "@internalwiki/core";
 
@@ -205,3 +209,11 @@ export type RecentDeadLetterStats = {
   last24h: number;
   last7d: number;
 };
+
+export type SessionPolicyRecord = SessionPolicy;
+
+export type AuditExportJobRecord = AuditExportJob;
+
+export type IncidentSummaryRecord = IncidentSummary;
+
+export type SloSummaryRecord = SloSummary;

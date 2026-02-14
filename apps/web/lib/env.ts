@@ -17,6 +17,14 @@ export function assertRuntimeEnvSafety(): void {
     if (missing.length > 0) {
       throw new Error(`Missing required production environment variables: ${missing.join(", ")}`);
     }
+
+    const weak = ["INTERNALWIKI_ENCRYPTION_KEY", "INTERNALWIKI_SESSION_SIGNING_KEY"].filter((key) => {
+      const value = process.env[key];
+      return !value || value.trim().length < 16;
+    });
+    if (weak.length > 0) {
+      throw new Error(`Unsafe production environment variables (must be >=16 chars): ${weak.join(", ")}`);
+    }
   }
 
   validated = true;

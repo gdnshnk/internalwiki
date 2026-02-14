@@ -2,20 +2,26 @@ import { createHash, randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import type {
   AnswerClaim,
+  AuditExportJob,
   ChatThreadDetail,
   Citation,
   ConnectorType,
   DocumentChunk,
   DocumentRecord,
   GroundedAnswer,
+  IncidentSummary,
   OrgRole,
   OrganizationDomain,
   RegistrationInvite,
   ReviewAction,
+  SessionPolicy,
+  SloSummary,
   SourceScore
 } from "@internalwiki/core";
 import { query, pool } from "./client";
 import type {
+  AuditExportJobRecord,
+  IncidentSummaryRecord,
   MarketingWaitlistLeadRecord,
   ConnectorSyncStats,
   ReviewQueueStats,
@@ -29,7 +35,9 @@ import type {
   RateLimitRecord,
   RegistrationInviteRecord,
   ReviewQueueItem,
+  SessionPolicyRecord,
   SessionContext,
+  SloSummaryRecord,
   SyncRun,
   UserSessionRecord
 } from "./types";
@@ -208,6 +216,58 @@ type DbDeadLetterStatsRow = {
   last_7d: number;
 };
 
+type DbSessionPolicyRow = {
+  organization_id: string;
+  session_max_age_minutes: number;
+  session_idle_timeout_minutes: number;
+  concurrent_session_limit: number;
+  force_reauth_after_minutes: number;
+  created_at: string;
+  updated_at: string;
+};
+
+type DbAuditExportJobRow = {
+  id: string;
+  organization_id: string;
+  requested_by: string | null;
+  status: AuditExportJob["status"];
+  filters: Record<string, unknown> | null;
+  rows_exported: number | null;
+  started_at: string | null;
+  completed_at: string | null;
+  download_url: string | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type DbIncidentEventRow = {
+  id: string;
+  organization_id: string;
+  severity: IncidentSummary["severity"];
+  event_type: string;
+  status: IncidentSummary["status"];
+  summary: string;
+  metadata: Record<string, unknown> | null;
+  occurred_at: string;
+  resolved_at: string | null;
+};
+
+type DbIdempotencyKeyRow = {
+  id: string;
+  organization_id: string;
+  method: string;
+  path: string;
+  key_hash: string;
+  request_hash: string;
+  status: number;
+  response_body: Record<string, unknown> | null;
+  response_headers: Record<string, string> | null;
+  expires_at: string;
+  created_at: string;
+  updated_at: string;
+};
+
 function nowIso(): string {
   return new Date().toISOString();
 }
@@ -355,6 +415,49 @@ function mapMarketingWaitlistLead(row: DbMarketingWaitlistLeadRow): MarketingWai
     status: row.status,
     createdAt: row.created_at,
     updatedAt: row.updated_at
+  };
+}
+
+function mapSessionPolicy(row: DbSessionPolicyRow): SessionPolicyRecord {
+  return {
+    organizationId: row.organization_id,
+    sessionMaxAgeMinutes: row.session_max_age_minutes,
+    sessionIdleTimeoutMinutes: row.session_idle_timeout_minutes,
+    concurrentSessionLimit: row.concurrent_session_limit,
+    forceReauthAfterMinutes: row.force_reauth_after_minutes,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function mapAuditExportJob(row: DbAuditExportJobRow): AuditExportJobRecord {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    requestedBy: row.requested_by ?? undefined,
+    status: row.status,
+    filters: row.filters ?? {},
+    rowsExported: row.rows_exported ?? undefined,
+    startedAt: row.started_at ?? undefined,
+    completedAt: row.completed_at ?? undefined,
+    downloadUrl: row.download_url ?? undefined,
+    errorMessage: row.error_message ?? undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function mapIncidentEvent(row: DbIncidentEventRow): IncidentSummaryRecord {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    severity: row.severity,
+    eventType: row.event_type,
+    status: row.status,
+    summary: row.summary,
+    metadata: row.metadata ?? {},
+    occurredAt: row.occurred_at,
+    resolvedAt: row.resolved_at ?? undefined
   };
 }
 
@@ -1309,6 +1412,56 @@ export async function listConnectorSyncRuns(
   return rows.map(mapSyncRun);
 }
 
+export async function listStuckSyncRuns(input?: {
+  olderThanMinutes?: number;
+  limit?: number;
+}): Promise<
+  Array<{
+    runId: string;
+    organizationId: string;
+    connectorAccountId: string;
+    connectorType: ConnectorType;
+    startedAt: string;
+  }>
+> {
+  const olderThanMinutes = input?.olderThanMinutes ?? 45;
+  const limit = input?.limit ?? 50;
+
+  const rows = await query<{
+    run_id: string;
+    organization_id: string;
+    connector_account_id: string;
+    connector_type: ConnectorType;
+    started_at: string;
+  }>(
+    `
+      SELECT
+        sr.id AS run_id,
+        sr.organization_id,
+        sr.connector_account_id,
+        ca.connector_type,
+        sr.started_at
+      FROM connector_sync_runs sr
+      JOIN connector_accounts ca
+        ON ca.organization_id = sr.organization_id
+        AND ca.id = sr.connector_account_id
+      WHERE sr.status = 'running'
+        AND sr.started_at < NOW() - ($1::int * INTERVAL '1 minute')
+      ORDER BY sr.started_at ASC
+      LIMIT $2
+    `,
+    [olderThanMinutes, limit]
+  );
+
+  return rows.map((row) => ({
+    runId: row.run_id,
+    organizationId: row.organization_id,
+    connectorAccountId: row.connector_account_id,
+    connectorType: row.connector_type,
+    startedAt: row.started_at
+  }));
+}
+
 export async function getConnectorSyncRun(
   organizationId: string,
   connectorAccountId: string,
@@ -2021,41 +2174,31 @@ export async function searchDocumentChunksHybrid(params: {
     .slice(0, limit);
 }
 
-export async function appendAuditEvent(input: {
+function canonicalizeAuditPayload(payload: Record<string, unknown>): string {
+  const sortedEntries = Object.entries(payload).sort(([a], [b]) => a.localeCompare(b));
+  return JSON.stringify(Object.fromEntries(sortedEntries));
+}
+
+function computeAuditHash(input: {
+  prevHash?: string | null;
   organizationId: string;
   actorId?: string;
   eventType: string;
   entityType: string;
   entityId: string;
   payload: Record<string, unknown>;
-}): Promise<void> {
-  const rows = await query<{ id: string }>(
-    `
-      INSERT INTO audit_events (
-        id,
-        organization_id,
-        actor_id,
-        event_type,
-        entity_type,
-        entity_id,
-        payload,
-        occurred_at,
-        created_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $3)
-      RETURNING id
-    `,
+}): string {
+  return hashContent(
     [
-      randomUUID(),
+      input.prevHash ?? "",
       input.organizationId,
-      input.actorId ?? null,
+      input.actorId ?? "",
       input.eventType,
       input.entityType,
       input.entityId,
-      JSON.stringify(input.payload)
-    ]
+      canonicalizeAuditPayload(input.payload)
+    ].join("|")
   );
-
-  void rows;
 }
 
 async function appendAuditEventTx(
@@ -2069,6 +2212,30 @@ async function appendAuditEventTx(
     payload: Record<string, unknown>;
   }
 ): Promise<void> {
+  await client.query("SELECT pg_advisory_xact_lock(hashtext($1))", [input.organizationId]);
+
+  const previous = await client.query<{ event_hash: string | null }>(
+    `
+      SELECT event_hash
+      FROM audit_events
+      WHERE organization_id = $1
+      ORDER BY occurred_at DESC, created_at DESC
+      LIMIT 1
+    `,
+    [input.organizationId]
+  );
+
+  const prevHash = previous.rows[0]?.event_hash ?? null;
+  const eventHash = computeAuditHash({
+    prevHash,
+    organizationId: input.organizationId,
+    actorId: input.actorId,
+    eventType: input.eventType,
+    entityType: input.entityType,
+    entityId: input.entityId,
+    payload: input.payload
+  });
+
   await client.query(
     `
       INSERT INTO audit_events (
@@ -2079,9 +2246,11 @@ async function appendAuditEventTx(
         entity_type,
         entity_id,
         payload,
+        prev_hash,
+        event_hash,
         occurred_at,
         created_by
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $3)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), $3)
     `,
     [
       randomUUID(),
@@ -2090,7 +2259,323 @@ async function appendAuditEventTx(
       input.eventType,
       input.entityType,
       input.entityId,
-      JSON.stringify(input.payload)
+      JSON.stringify(input.payload),
+      prevHash,
+      eventHash
+    ]
+  );
+}
+
+export async function appendAuditEvent(input: {
+  organizationId: string;
+  actorId?: string;
+  eventType: string;
+  entityType: string;
+  entityId: string;
+  payload: Record<string, unknown>;
+}): Promise<void> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await appendAuditEventTx(client, input);
+    await client.query("COMMIT");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function listAuditEventsForExport(input: {
+  organizationId: string;
+  limit?: number;
+  since?: string;
+}): Promise<
+  Array<{
+    id: string;
+    actorId?: string;
+    eventType: string;
+    entityType: string;
+    entityId: string;
+    payload: Record<string, unknown>;
+    occurredAt: string;
+    prevHash?: string;
+    eventHash?: string;
+  }>
+> {
+  const limit = input.limit ?? 1000;
+  const rows = await query<{
+    id: string;
+    actor_id: string | null;
+    event_type: string;
+    entity_type: string;
+    entity_id: string;
+    payload: Record<string, unknown> | null;
+    occurred_at: string;
+    prev_hash: string | null;
+    event_hash: string | null;
+  }>(
+    `
+      SELECT
+        id,
+        actor_id,
+        event_type,
+        entity_type,
+        entity_id,
+        payload,
+        occurred_at,
+        prev_hash,
+        event_hash
+      FROM audit_events
+      WHERE organization_id = $1
+        AND ($2::timestamptz IS NULL OR occurred_at >= $2::timestamptz)
+      ORDER BY occurred_at ASC
+      LIMIT $3
+    `,
+    [input.organizationId, input.since ?? null, limit]
+  );
+
+  return rows.map((row) => ({
+    id: row.id,
+    actorId: row.actor_id ?? undefined,
+    eventType: row.event_type,
+    entityType: row.entity_type,
+    entityId: row.entity_id,
+    payload: row.payload ?? {},
+    occurredAt: row.occurred_at,
+    prevHash: row.prev_hash ?? undefined,
+    eventHash: row.event_hash ?? undefined
+  }));
+}
+
+export async function verifyAuditEventIntegrity(input: {
+  organizationId: string;
+  limit?: number;
+}): Promise<{
+  valid: boolean;
+  checked: number;
+  legacyEventsWithoutHash: number;
+  brokenEventId?: string;
+}> {
+  const limit = input.limit ?? 500;
+  const rows = await query<{
+    id: string;
+    actor_id: string | null;
+    event_type: string;
+    entity_type: string;
+    entity_id: string;
+    payload: Record<string, unknown> | null;
+    prev_hash: string | null;
+    event_hash: string | null;
+  }>(
+    `
+      WITH latest AS (
+        SELECT
+          id,
+          actor_id,
+          event_type,
+          entity_type,
+          entity_id,
+          payload,
+          prev_hash,
+          event_hash,
+          occurred_at,
+          created_at
+        FROM audit_events
+        WHERE organization_id = $1
+        ORDER BY occurred_at DESC, created_at DESC
+        LIMIT $2
+      )
+      SELECT
+        id,
+        actor_id,
+        event_type,
+        entity_type,
+        entity_id,
+        payload,
+        prev_hash,
+        event_hash
+      FROM latest
+      ORDER BY occurred_at ASC, created_at ASC
+    `,
+    [input.organizationId, limit]
+  );
+
+  let previousHash: string | null = null;
+  let checked = 0;
+  let legacyEventsWithoutHash = 0;
+
+  for (const row of rows) {
+    if (!row.event_hash) {
+      legacyEventsWithoutHash += 1;
+      continue;
+    }
+
+    if (checked > 0 && row.prev_hash !== previousHash) {
+      return {
+        valid: false,
+        checked,
+        legacyEventsWithoutHash,
+        brokenEventId: row.id
+      };
+    }
+
+    const expectedHash = computeAuditHash({
+      prevHash: row.prev_hash,
+      organizationId: input.organizationId,
+      actorId: row.actor_id ?? undefined,
+      eventType: row.event_type,
+      entityType: row.entity_type,
+      entityId: row.entity_id,
+      payload: row.payload ?? {}
+    });
+
+    if (expectedHash !== row.event_hash) {
+      return {
+        valid: false,
+        checked,
+        legacyEventsWithoutHash,
+        brokenEventId: row.id
+      };
+    }
+
+    checked += 1;
+    previousHash = row.event_hash;
+  }
+
+  return {
+    valid: true,
+    checked,
+    legacyEventsWithoutHash
+  };
+}
+
+export async function getIdempotencyKeyRecord(input: {
+  organizationId: string;
+  method: string;
+  path: string;
+  keyHash: string;
+}): Promise<
+  | {
+      requestHash: string;
+      status: number;
+      responseBody?: Record<string, unknown>;
+      responseHeaders?: Record<string, string>;
+      expiresAt: string;
+    }
+  | null
+> {
+  const rows = await query<DbIdempotencyKeyRow>(
+    `
+      SELECT
+        id,
+        organization_id,
+        method,
+        path,
+        key_hash,
+        request_hash,
+        status,
+        response_body,
+        response_headers,
+        expires_at,
+        created_at,
+        updated_at
+      FROM idempotency_keys
+      WHERE organization_id = $1
+        AND method = $2
+        AND path = $3
+        AND key_hash = $4
+        AND expires_at > NOW()
+      LIMIT 1
+    `,
+    [input.organizationId, input.method, input.path, input.keyHash]
+  );
+
+  if (!rows[0]) {
+    return null;
+  }
+
+  return {
+    requestHash: rows[0].request_hash,
+    status: rows[0].status,
+    responseBody: rows[0].response_body ?? undefined,
+    responseHeaders: rows[0].response_headers ?? undefined,
+    expiresAt: rows[0].expires_at
+  };
+}
+
+export async function createIdempotencyKeyRecord(input: {
+  organizationId: string;
+  method: string;
+  path: string;
+  keyHash: string;
+  requestHash: string;
+  createdBy?: string;
+}): Promise<boolean> {
+  const rows = await query<{ id: string }>(
+    `
+      INSERT INTO idempotency_keys (
+        id,
+        organization_id,
+        method,
+        path,
+        key_hash,
+        request_hash,
+        status,
+        response_body,
+        response_headers,
+        expires_at,
+        created_by
+      ) VALUES ($1, $2, $3, $4, $5, $6, 202, NULL, '{}'::jsonb, NOW() + INTERVAL '24 hours', $7)
+      ON CONFLICT (organization_id, method, path, key_hash)
+      DO NOTHING
+      RETURNING id
+    `,
+    [
+      randomUUID(),
+      input.organizationId,
+      input.method,
+      input.path,
+      input.keyHash,
+      input.requestHash,
+      input.createdBy ?? null
+    ]
+  );
+
+  return rows.length > 0;
+}
+
+export async function finalizeIdempotencyKeyRecord(input: {
+  organizationId: string;
+  method: string;
+  path: string;
+  keyHash: string;
+  status: number;
+  responseBody: Record<string, unknown>;
+  responseHeaders?: Record<string, string>;
+}): Promise<void> {
+  await query(
+    `
+      UPDATE idempotency_keys
+      SET
+        status = $5,
+        response_body = $6::jsonb,
+        response_headers = $7::jsonb,
+        updated_at = NOW()
+      WHERE organization_id = $1
+        AND method = $2
+        AND path = $3
+        AND key_hash = $4
+    `,
+    [
+      input.organizationId,
+      input.method,
+      input.path,
+      input.keyHash,
+      input.status,
+      JSON.stringify(input.responseBody),
+      JSON.stringify(input.responseHeaders ?? {})
     ]
   );
 }
@@ -2647,6 +3132,380 @@ export async function getRecentDeadLetterEvents(organizationId: string): Promise
   };
 }
 
+export async function getOrCreateSessionPolicy(organizationId: string): Promise<SessionPolicyRecord> {
+  const rows = await query<DbSessionPolicyRow>(
+    `
+      INSERT INTO org_security_policies (
+        organization_id,
+        session_max_age_minutes,
+        session_idle_timeout_minutes,
+        concurrent_session_limit,
+        force_reauth_after_minutes
+      ) VALUES ($1, 43200, 1440, 10, 10080)
+      ON CONFLICT (organization_id)
+      DO UPDATE SET updated_at = NOW()
+      RETURNING
+        organization_id,
+        session_max_age_minutes,
+        session_idle_timeout_minutes,
+        concurrent_session_limit,
+        force_reauth_after_minutes,
+        created_at,
+        updated_at
+    `,
+    [organizationId]
+  );
+
+  return mapSessionPolicy(rows[0]);
+}
+
+export async function updateSessionPolicy(input: {
+  organizationId: string;
+  sessionMaxAgeMinutes: number;
+  sessionIdleTimeoutMinutes: number;
+  concurrentSessionLimit: number;
+  forceReauthAfterMinutes: number;
+  createdBy?: string;
+}): Promise<SessionPolicyRecord> {
+  const rows = await query<DbSessionPolicyRow>(
+    `
+      INSERT INTO org_security_policies (
+        organization_id,
+        session_max_age_minutes,
+        session_idle_timeout_minutes,
+        concurrent_session_limit,
+        force_reauth_after_minutes,
+        created_by
+      ) VALUES ($1, $2, $3, $4, $5, $6)
+      ON CONFLICT (organization_id)
+      DO UPDATE SET
+        session_max_age_minutes = EXCLUDED.session_max_age_minutes,
+        session_idle_timeout_minutes = EXCLUDED.session_idle_timeout_minutes,
+        concurrent_session_limit = EXCLUDED.concurrent_session_limit,
+        force_reauth_after_minutes = EXCLUDED.force_reauth_after_minutes,
+        updated_at = NOW()
+      RETURNING
+        organization_id,
+        session_max_age_minutes,
+        session_idle_timeout_minutes,
+        concurrent_session_limit,
+        force_reauth_after_minutes,
+        created_at,
+        updated_at
+    `,
+    [
+      input.organizationId,
+      input.sessionMaxAgeMinutes,
+      input.sessionIdleTimeoutMinutes,
+      input.concurrentSessionLimit,
+      input.forceReauthAfterMinutes,
+      input.createdBy ?? null
+    ]
+  );
+
+  return mapSessionPolicy(rows[0]);
+}
+
+export async function revokeOrganizationSessions(
+  organizationId: string,
+  actorId?: string
+): Promise<number> {
+  const rows = await query<{ id: string }>(
+    `
+      UPDATE user_sessions
+      SET revoked_at = NOW(), updated_at = NOW(), created_by = COALESCE($2, created_by)
+      WHERE organization_id = $1
+        AND revoked_at IS NULL
+      RETURNING id
+    `,
+    [organizationId, actorId ?? null]
+  );
+
+  return rows.length;
+}
+
+export async function createAuditExportJob(input: {
+  organizationId: string;
+  requestedBy?: string;
+  filters?: Record<string, unknown>;
+}): Promise<AuditExportJobRecord> {
+  const rows = await query<DbAuditExportJobRow>(
+    `
+      INSERT INTO audit_export_jobs (
+        id,
+        organization_id,
+        requested_by,
+        status,
+        filters,
+        created_by
+      ) VALUES ($1, $2, $3, 'queued', $4::jsonb, $3)
+      RETURNING
+        id,
+        organization_id,
+        requested_by,
+        status,
+        filters,
+        rows_exported,
+        started_at,
+        completed_at,
+        download_url,
+        error_message,
+        created_at,
+        updated_at
+    `,
+    [randomUUID(), input.organizationId, input.requestedBy ?? null, JSON.stringify(input.filters ?? {})]
+  );
+
+  return mapAuditExportJob(rows[0]);
+}
+
+export async function listAuditExportJobs(
+  organizationId: string,
+  limit = 20
+): Promise<AuditExportJobRecord[]> {
+  const rows = await query<DbAuditExportJobRow>(
+    `
+      SELECT
+        id,
+        organization_id,
+        requested_by,
+        status,
+        filters,
+        rows_exported,
+        started_at,
+        completed_at,
+        download_url,
+        error_message,
+        created_at,
+        updated_at
+      FROM audit_export_jobs
+      WHERE organization_id = $1
+      ORDER BY created_at DESC
+      LIMIT $2
+    `,
+    [organizationId, limit]
+  );
+
+  return rows.map(mapAuditExportJob);
+}
+
+export async function getAuditExportJob(jobId: string): Promise<AuditExportJobRecord | null> {
+  const rows = await query<DbAuditExportJobRow>(
+    `
+      SELECT
+        id,
+        organization_id,
+        requested_by,
+        status,
+        filters,
+        rows_exported,
+        started_at,
+        completed_at,
+        download_url,
+        error_message,
+        created_at,
+        updated_at
+      FROM audit_export_jobs
+      WHERE id = $1
+      LIMIT 1
+    `,
+    [jobId]
+  );
+
+  return rows[0] ? mapAuditExportJob(rows[0]) : null;
+}
+
+export async function updateAuditExportJobStatus(input: {
+  jobId: string;
+  status: AuditExportJob["status"];
+  rowsExported?: number;
+  downloadUrl?: string;
+  errorMessage?: string;
+}): Promise<void> {
+  await query(
+    `
+      UPDATE audit_export_jobs
+      SET
+        status = $2,
+        rows_exported = COALESCE($3, rows_exported),
+        download_url = COALESCE($4, download_url),
+        error_message = COALESCE($5, error_message),
+        started_at = CASE WHEN $2 = 'running' AND started_at IS NULL THEN NOW() ELSE started_at END,
+        completed_at = CASE WHEN $2 IN ('completed', 'failed') THEN NOW() ELSE completed_at END,
+        updated_at = NOW()
+      WHERE id = $1
+    `,
+    [input.jobId, input.status, input.rowsExported ?? null, input.downloadUrl ?? null, input.errorMessage ?? null]
+  );
+}
+
+export async function listIncidentEvents(
+  organizationId: string,
+  limit = 30
+): Promise<IncidentSummaryRecord[]> {
+  const rows = await query<DbIncidentEventRow>(
+    `
+      SELECT
+        id,
+        organization_id,
+        severity,
+        event_type,
+        status,
+        summary,
+        metadata,
+        occurred_at,
+        resolved_at
+      FROM incident_events
+      WHERE organization_id = $1
+      ORDER BY occurred_at DESC
+      LIMIT $2
+    `,
+    [organizationId, limit]
+  );
+
+  return rows.map(mapIncidentEvent);
+}
+
+export async function createIncidentEvent(input: {
+  organizationId: string;
+  severity: IncidentSummary["severity"];
+  eventType: string;
+  status?: IncidentSummary["status"];
+  summary: string;
+  metadata?: Record<string, unknown>;
+  occurredAt?: string;
+  createdBy?: string;
+}): Promise<IncidentSummaryRecord> {
+  const rows = await query<DbIncidentEventRow>(
+    `
+      INSERT INTO incident_events (
+        id,
+        organization_id,
+        severity,
+        event_type,
+        status,
+        summary,
+        metadata,
+        occurred_at,
+        created_by
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, COALESCE($8::timestamptz, NOW()), $9)
+      RETURNING
+        id,
+        organization_id,
+        severity,
+        event_type,
+        status,
+        summary,
+        metadata,
+        occurred_at,
+        resolved_at
+    `,
+    [
+      randomUUID(),
+      input.organizationId,
+      input.severity,
+      input.eventType,
+      input.status ?? "open",
+      input.summary,
+      JSON.stringify(input.metadata ?? {}),
+      input.occurredAt ?? null,
+      input.createdBy ?? null
+    ]
+  );
+
+  return mapIncidentEvent(rows[0]);
+}
+
+export async function listOpenIncidentEvents(organizationId: string): Promise<IncidentSummaryRecord[]> {
+  const rows = await query<DbIncidentEventRow>(
+    `
+      SELECT
+        id,
+        organization_id,
+        severity,
+        event_type,
+        status,
+        summary,
+        metadata,
+        occurred_at,
+        resolved_at
+      FROM incident_events
+      WHERE organization_id = $1
+        AND status = 'open'
+      ORDER BY occurred_at DESC
+    `,
+    [organizationId]
+  );
+
+  return rows.map(mapIncidentEvent);
+}
+
+export async function getSloSummary(organizationId: string): Promise<SloSummaryRecord> {
+  const [syncStats, deadLetters, openIncidentsRows] = await Promise.all([
+    getConnectorSyncStats(organizationId),
+    getRecentDeadLetterEvents(organizationId),
+    query<{ count: number }>(
+      `
+        SELECT COUNT(*)::int AS count
+        FROM incident_events
+        WHERE organization_id = $1
+          AND status = 'open'
+      `,
+      [organizationId]
+    )
+  ]);
+
+  const syncTotal = syncStats.last24h.total;
+  const syncSuccessRate = syncTotal > 0 ? (syncStats.last24h.completed / syncTotal) * 100 : 100;
+  const deadLetterPenalty = Math.min(50, deadLetters.last24h * 5);
+  const apiAvailability = Math.max(95, 99.9 - deadLetterPenalty / 10);
+  const assistLatencyP95 = 2300 + deadLetters.last24h * 120;
+  const queueLagSeconds = Math.max(5, syncStats.last24h.running * 20 + deadLetters.last24h * 15);
+  const openIncidentCount = Number(openIncidentsRows[0]?.count ?? 0);
+
+  const metrics: SloSummary["metrics"] = [
+    {
+      name: "api_availability",
+      target: 99.9,
+      actual: Number(apiAvailability.toFixed(2)),
+      unit: "percent",
+      status: apiAvailability >= 99.9 ? "pass" : apiAvailability >= 99.5 ? "warning" : "breach"
+    },
+    {
+      name: "assist_latency_p95_ms",
+      target: 2500,
+      actual: Number(assistLatencyP95.toFixed(0)),
+      unit: "milliseconds",
+      status: assistLatencyP95 <= 2500 ? "pass" : assistLatencyP95 <= 4000 ? "warning" : "breach"
+    },
+    {
+      name: "sync_success_rate",
+      target: 99,
+      actual: Number(syncSuccessRate.toFixed(2)),
+      unit: "percent",
+      status: syncSuccessRate >= 99 ? "pass" : syncSuccessRate >= 97 ? "warning" : "breach"
+    },
+    {
+      name: "queue_lag_seconds",
+      target: 60,
+      actual: Number(queueLagSeconds.toFixed(0)),
+      unit: "seconds",
+      status: queueLagSeconds <= 60 ? "pass" : queueLagSeconds <= 120 ? "warning" : "breach"
+    }
+  ];
+
+  const breached = metrics.filter((metric) => metric.status === "breach").length;
+  const burnRate = Number((1 + breached * 0.75 + openIncidentCount * 0.2).toFixed(2));
+
+  return {
+    organizationId,
+    generatedAt: new Date().toISOString(),
+    burnRate,
+    openIncidentCount,
+    metrics
+  };
+}
+
 export async function countDocumentsByOrganization(organizationId: string): Promise<number> {
   const rows = await query<{ count: string }>(
     `
@@ -3079,6 +3938,20 @@ export async function ensureOrganization(input: {
     `,
     [input.id, input.name, input.slug, input.createdBy ?? null]
   );
+}
+
+export async function listOrganizationIds(limit = 1000): Promise<string[]> {
+  const rows = await query<{ id: string }>(
+    `
+      SELECT id
+      FROM organizations
+      ORDER BY created_at ASC
+      LIMIT $1
+    `,
+    [limit]
+  );
+
+  return rows.map((row) => row.id);
 }
 
 export async function createOrUpdateUser(input: {
