@@ -10,24 +10,24 @@ export default function ContactPage() {
         <p className="workspace-header__eyebrow" style={{ margin: 0 }}>
           Contact
         </p>
-        <h1>Talk with the InternalWiki team</h1>
-        <p>Send your workspace size and rollout timeline. We respond with a direct onboarding path.</p>
+        <h1>Talk with our team</h1>
+        <p>Tell us what you want to solve and when you want to launch.</p>
       </section>
 
       <section className="marketing-split marketing-split--equal">
         <article className="marketing-panel">
-          <h3>Direct contact</h3>
+          <h3>Email</h3>
           <p>
             <a href="mailto:hello@internalwiki.com">hello@internalwiki.com</a>
           </p>
-          <p className="surface-sub">Include connector scope, team size, and target launch date.</p>
+          <p className="surface-sub">Include your team size, key integrations, and target launch date.</p>
         </article>
 
         <article className="marketing-panel">
-          <h3>Fastest path</h3>
-          <p className="surface-sub">Join the beta waitlist first, then we schedule a short scoping call.</p>
+          <h3>Need pricing first?</h3>
+          <p className="surface-sub">Send a quick request and we&apos;ll share plan options.</p>
           <Link href="/pricing" className="ask-submit" style={{ marginTop: "0.9rem", display: "inline-flex" }}>
-            Go to pricing
+            View pricing
           </Link>
         </article>
       </section>

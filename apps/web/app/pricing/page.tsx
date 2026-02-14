@@ -10,10 +10,9 @@ export default function PricingPage() {
         <p className="workspace-header__eyebrow" style={{ margin: 0 }}>
           Pricing
         </p>
-        <h1>Beta access for internal teams</h1>
+        <h1>Pricing for growing teams</h1>
         <p>
-          We are onboarding organizations in guided waves. Use a company email to join the waitlist and we will
-          schedule setup.
+          Share your team size and goals. We&apos;ll recommend the right plan and rollout path.
         </p>
       </section>
 
@@ -21,16 +20,16 @@ export default function PricingPage() {
         <article className="marketing-panel">
           <h3>What is included</h3>
           <ul className="marketing-list">
-            <li>Assistant search with citations and trust score</li>
-            <li>Google Workspace + Slack + Microsoft 365 ingestion</li>
-            <li>15-minute sync cadence and review queue</li>
-            <li>Org isolation and audit trail visibility</li>
+            <li>Cited, permission-aware summaries</li>
+            <li>Slack, Microsoft 365, and Google Workspace integrations</li>
+            <li>Automated sync and freshness monitoring</li>
+            <li>Security controls and admin visibility</li>
           </ul>
         </article>
 
         <article className="marketing-panel">
-          <h3>Join waitlist</h3>
-          <p className="surface-sub">Company email required.</p>
+          <h3>Request pricing</h3>
+          <p className="surface-sub">Use a work email and we&apos;ll follow up with plan options.</p>
           <WaitlistForm sourcePage="/pricing" />
         </article>
       </section>

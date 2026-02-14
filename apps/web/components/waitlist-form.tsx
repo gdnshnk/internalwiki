@@ -39,7 +39,7 @@ export function WaitlistForm(props: { sourcePage: string }) {
 
       const payload = (await response.json()) as { message?: string; error?: string };
       if (!response.ok) {
-        setState({ status: "error", message: payload.error ?? "Unable to join waitlist." });
+        setState({ status: "error", message: payload.error ?? "Unable to submit your request." });
         return;
       }
 
@@ -47,7 +47,7 @@ export function WaitlistForm(props: { sourcePage: string }) {
       setCompany("");
       setRole("");
       setWebsite("");
-      setState({ status: "success", message: payload.message ?? "Thanks, you are on the beta list." });
+      setState({ status: "success", message: payload.message ?? "Thanks. We will contact you shortly." });
     } catch {
       setState({ status: "error", message: "Network error. Please try again." });
     }
@@ -81,7 +81,7 @@ export function WaitlistForm(props: { sourcePage: string }) {
           type="text"
           value={role}
           onChange={(event) => setRole(event.target.value)}
-          placeholder="Ops, Product, Security..."
+          placeholder="IT, Operations, Security..."
         />
       </label>
       <label className="sr-only" aria-hidden>
@@ -95,7 +95,7 @@ export function WaitlistForm(props: { sourcePage: string }) {
         />
       </label>
       <button type="submit" className="ask-submit" disabled={state.status === "submitting"}>
-        {state.status === "submitting" ? "Submitting..." : "Join beta waitlist"}
+        {state.status === "submitting" ? "Submitting..." : "Request pricing info"}
       </button>
       {state.status === "success" ? <p className="waitlist-form__ok">{state.message}</p> : null}
       {state.status === "error" ? <p className="error-banner">{state.message}</p> : null}
