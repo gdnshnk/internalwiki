@@ -533,52 +533,6 @@ a:focus-visible {
   line-height: 1.48;
 }
 
-.auth-status-grid {
-  display: grid;
-  gap: 0.5rem;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.auth-status-pill {
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: color-mix(in oklab, var(--surface) 78%, transparent);
-  padding: 0.62rem 0.7rem;
-  display: grid;
-  gap: 0.22rem;
-}
-
-.auth-status-pill span {
-  color: var(--text-muted);
-  font-size: 0.74rem;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-}
-
-.auth-status-pill strong {
-  font-size: 0.85rem;
-  font-weight: 680;
-  letter-spacing: 0.01em;
-}
-
-.auth-feature-list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: grid;
-  gap: 0.48rem;
-}
-
-.auth-feature-list li {
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  background: color-mix(in oklab, var(--surface-muted) 88%, transparent);
-  color: var(--text-muted);
-  padding: 0.58rem 0.68rem;
-  font-size: 0.82rem;
-  line-height: 1.4;
-}
-
 .auth-shell__panel {
   border: 1px solid var(--border);
   border-radius: calc(var(--radius-lg) + 2px);
@@ -816,10 +770,6 @@ a:focus-visible {
   .auth-shell__intro {
     gap: 0.72rem;
   }
-
-  .auth-status-grid {
-    grid-template-columns: 1fr 1fr;
-  }
 }
 
 @media (max-width: 640px) {
@@ -835,10 +785,6 @@ a:focus-visible {
 
   .auth-shell__panel {
     padding: 0.8rem;
-  }
-
-  .auth-status-grid {
-    grid-template-columns: 1fr;
   }
 
   .auth-field-row {

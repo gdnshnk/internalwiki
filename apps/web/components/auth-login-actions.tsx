@@ -45,11 +45,9 @@ export function AuthLoginActions(props: {
   const [error, setError] = useState<string | null>(null);
 
   const derivedError = useMemo(() => errorMessage(props.authErrorCode), [props.authErrorCode]);
-  const panelTitle = intent === "login" ? "Sign in to InternalWiki" : "Create your workspace account";
+  const panelTitle = intent === "login" ? "Welcome back" : "Create your account";
   const panelSubtitle =
-    intent === "login"
-      ? "Use your work email and password, or continue with Google SSO."
-      : "Create a secure account using your company email, then connect your sources.";
+    intent === "login" ? "Sign in with your work email to continue." : "Use your work email to create your account.";
 
   async function startGoogleOAuth(): Promise<void> {
     if (busy) {
@@ -97,7 +95,7 @@ export function AuthLoginActions(props: {
     }
 
     if (!props.canUsePassword) {
-      setError("Email/password login is unavailable until DATABASE_URL is configured.");
+      setError("Email sign-in is currently unavailable. Please try Google sign-in.");
       return;
     }
 
@@ -193,29 +191,9 @@ export function AuthLoginActions(props: {
   return (
     <section className="auth-shell">
       <aside className="auth-shell__intro">
-        <p className="auth-shell__eyebrow">Authentication</p>
-        <h1 className="auth-shell__title">Secure, permission-aware access</h1>
-        <p className="auth-shell__subtitle">
-          InternalWiki signs in with work identity, enforces organization boundaries, and returns citation-backed
-          summaries from approved sources.
-        </p>
-
-        <div className="auth-status-grid" aria-label="Authentication method status">
-          <div className="auth-status-pill">
-            <span>Password auth</span>
-            <strong>{props.canUsePassword ? "Ready" : "Setup required"}</strong>
-          </div>
-          <div className="auth-status-pill">
-            <span>Google SSO</span>
-            <strong>{props.canUseGoogle ? "Ready" : "Optional setup"}</strong>
-          </div>
-        </div>
-
-        <ul className="auth-feature-list">
-          <li>Work-email only account creation.</li>
-          <li>Session controls and organization policy enforcement.</li>
-          <li>Permission-aware retrieval and citation verification.</li>
-        </ul>
+        <p className="auth-shell__eyebrow">InternalWiki</p>
+        <h1 className="auth-shell__title">Sign in to your workspace</h1>
+        <p className="auth-shell__subtitle">Use your work account to continue.</p>
       </aside>
 
       <div className="auth-shell__panel">
@@ -380,10 +358,10 @@ export function AuthLoginActions(props: {
           </button>
         ) : null}
 
-        {!props.canUseGoogle ? <p className="auth-config-note">Google login is unavailable until OAuth env vars are configured.</p> : null}
-        {!props.canUsePassword ? <p className="auth-config-note">Email/password login is unavailable until `DATABASE_URL` is configured.</p> : null}
+        {!props.canUseGoogle ? <p className="auth-config-note">Google sign-in is currently unavailable.</p> : null}
+        {!props.canUsePassword ? <p className="auth-config-note">Email sign-in is currently unavailable.</p> : null}
         {props.showDevBootstrap && !props.canUseBootstrap ? (
-          <p className="auth-config-note">Local bootstrap is unavailable until `DATABASE_URL` is configured.</p>
+          <p className="auth-config-note">Local test sign-in is currently unavailable.</p>
         ) : null}
 
         {derivedError ? <p className="error-banner">{derivedError}</p> : null}

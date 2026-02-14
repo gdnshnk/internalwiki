@@ -39,13 +39,12 @@ export default async function LoginPage({
         defaultIntent={defaultIntent}
       />
 
-      {missing.length > 0 ? (
+      {isDev && missing.length > 0 ? (
         <section className="surface-card auth-setup-card">
-          <p className="workspace-header__eyebrow">Setup required</p>
-          <h2 className="surface-title">Local environment checklist</h2>
+          <p className="workspace-header__eyebrow">Local setup</p>
+          <h2 className="surface-title">Development environment checklist</h2>
           <p className="surface-sub">
-            `/app` needs a configured database and at least one login method. Configure env vars and restart the web
-            server.
+            This appears only in local development. Configure your environment variables, then restart the web server.
           </p>
 
           <div className="data-grid auth-setup-grid">
