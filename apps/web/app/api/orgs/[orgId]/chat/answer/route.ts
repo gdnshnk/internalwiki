@@ -7,12 +7,14 @@ import { assertScopedOrgAccess } from "@/lib/organization";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { resolveRequestId, withRequestId } from "@/lib/request-id";
 import { enforceMutationSecurity } from "@/lib/security";
+import { enqueueLowConfidenceReviewQueueJob, enqueueQualityEvalLoopJob } from "@/lib/worker-jobs";
 import { randomUUID } from "node:crypto";
 import { listUserSourceIdentityKeys } from "@internalwiki/db";
 
 const chatInputSchema = z.object({
   query: z.string().min(4),
   threadId: z.string().min(8).optional(),
+  allowHistoricalEvidence: z.boolean().optional(),
   filters: z
     .object({
       sourceType: z
@@ -71,7 +73,13 @@ export async function POST(
     userId: session.userId
   });
   const viewerPrincipalKeys = Array.from(
-    new Set([`email:${session.email.toLowerCase()}`, ...identityKeys])
+    new Set([
+      `email:${session.email.toLowerCase()}`,
+      `user:${session.userId}`,
+      `role:${session.role}`,
+      `org:${orgId}`,
+      ...identityKeys
+    ])
   );
 
   const response = await runAssistantQuery({
@@ -80,6 +88,7 @@ export async function POST(
       query: parsed.data.query,
       mode: "ask",
       threadId: parsed.data.threadId,
+      allowHistoricalEvidence: parsed.data.allowHistoricalEvidence,
       filters: parsed.data.filters
     },
     actorId: session.userId,
@@ -101,6 +110,25 @@ export async function POST(
     }
   });
 
+  if (response.verification.status === "blocked") {
+    await enqueueLowConfidenceReviewQueueJob({
+      organizationId: orgId,
+      confidenceThreshold: 0.65,
+      windowMinutes: 180,
+      triggeredBy: session.userId
+    }).catch(() => undefined);
+
+    await enqueueQualityEvalLoopJob({
+      organizationId: orgId,
+      windowMinutes: 30,
+      minSamples: 5,
+      minPassRate: 85,
+      triggeredBy: session.userId,
+      triggerReason: "chat_answer_blocked",
+      sourceRequestId: requestId
+    }).catch(() => undefined);
+  }
+
   return jsonOk(
     {
       answer: response.answer,
@@ -113,7 +141,8 @@ export async function POST(
       grounding: response.grounding,
       traceability: response.traceability,
       verification: response.verification,
-      permissions: response.permissions
+      permissions: response.permissions,
+      qualityContract: response.qualityContract
     },
     withRequestId(requestId)
   );

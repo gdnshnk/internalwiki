@@ -7,6 +7,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { resolveRequestId, withRequestId } from "@/lib/request-id";
 import { safeError } from "@/lib/safe-log";
 import { enforceMutationSecurity } from "@/lib/security";
+import { enqueueLowConfidenceReviewQueueJob, enqueueQualityEvalLoopJob } from "@/lib/worker-jobs";
 import { createRequestLogger } from "@internalwiki/observability";
 import type { AssistantQueryStreamEvent } from "@internalwiki/core";
 import { listUserSourceIdentityKeys } from "@internalwiki/db";
@@ -58,7 +59,13 @@ export async function POST(
     userId: session.userId
   });
   const viewerPrincipalKeys = Array.from(
-    new Set([`email:${session.email.toLowerCase()}`, ...identityKeys])
+    new Set([
+      `email:${session.email.toLowerCase()}`,
+      `user:${session.userId}`,
+      `role:${session.role}`,
+      `org:${orgId}`,
+      ...identityKeys
+    ])
   );
   const streamMode = new URL(request.url).searchParams.get("stream") === "1";
 
@@ -85,6 +92,29 @@ export async function POST(
         verificationStatus: response.verification.status
       }
     });
+
+    if (response.verification.status === "blocked") {
+      await enqueueLowConfidenceReviewQueueJob({
+        organizationId: orgId,
+        confidenceThreshold: 0.65,
+        windowMinutes: 180,
+        triggeredBy: session.userId
+      }).catch((error) => {
+        log.warn({ message: (error as Error).message }, "Failed to enqueue low confidence review queue");
+      });
+
+      await enqueueQualityEvalLoopJob({
+        organizationId: orgId,
+        windowMinutes: 30,
+        minSamples: 5,
+        minPassRate: 85,
+        triggeredBy: session.userId,
+        triggerReason: "answer_blocked",
+        sourceRequestId: requestId
+      }).catch((error) => {
+        log.warn({ message: (error as Error).message }, "Failed to enqueue quality eval loop");
+      });
+    }
 
     return jsonOk(response, withRequestId(requestId));
   }
@@ -166,6 +196,29 @@ export async function POST(
               verificationStatus: response.verification.status
             }
           });
+
+          if (response.verification.status === "blocked") {
+            await enqueueLowConfidenceReviewQueueJob({
+              organizationId: orgId,
+              confidenceThreshold: 0.65,
+              windowMinutes: 180,
+              triggeredBy: session.userId
+            }).catch((error) => {
+              requestLog.warn({ message: (error as Error).message }, "Failed to enqueue low confidence review queue");
+            });
+
+            await enqueueQualityEvalLoopJob({
+              organizationId: orgId,
+              windowMinutes: 30,
+              minSamples: 5,
+              minPassRate: 85,
+              triggeredBy: session.userId,
+              triggerReason: "answer_blocked_stream",
+              sourceRequestId: requestId
+            }).catch((error) => {
+              requestLog.warn({ message: (error as Error).message }, "Failed to enqueue quality eval loop");
+            });
+          }
 
           const completionEvent: AssistantQueryStreamEvent = {
             type: "complete",

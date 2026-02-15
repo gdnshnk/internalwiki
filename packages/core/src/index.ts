@@ -6,3 +6,7 @@ export * from "./citations";
 export * from "./retrieval";
 export * from "./rbac";
 export * from "./query-expansion";
+export * from "./answer-quality";
+export * from "./knowledge";
+export * from "./retrieval-contract";
+export * from "./vector-store";

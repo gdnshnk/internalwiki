@@ -13,6 +13,23 @@ type AuditExportJobPayload = {
   requestedBy?: string;
 };
 
+type QualityEvalLoopJobPayload = {
+  organizationId: string;
+  windowMinutes?: number;
+  minSamples?: number;
+  minPassRate?: number;
+  triggeredBy?: string;
+  triggerReason?: string;
+  sourceRequestId?: string;
+};
+
+type LowConfidenceReviewQueueJobPayload = {
+  organizationId: string;
+  confidenceThreshold?: number;
+  windowMinutes?: number;
+  triggeredBy?: string;
+};
+
 type WorkerUtilsLike = {
   addJob: (
     identifier: string,
@@ -75,6 +92,50 @@ export async function enqueueAuditExportJob(payload: AuditExportJobPayload): Pro
   const job = await workerUtils.addJob("audit-export-generate", payload, {
     maxAttempts: 3,
     queueName: `audit-export:${payload.organizationId}`,
+    jobKey
+  });
+
+  return {
+    jobId: job.id,
+    jobKey
+  };
+}
+
+function currentQualityBucketIso(): string {
+  const now = new Date();
+  const minuteBucket = Math.floor(now.getUTCMinutes() / 5) * 5;
+  now.setUTCMinutes(minuteBucket, 0, 0);
+  return now.toISOString();
+}
+
+export async function enqueueQualityEvalLoopJob(payload: QualityEvalLoopJobPayload): Promise<{
+  jobId: string;
+  jobKey: string;
+}> {
+  const workerUtils = await getWorkerUtils();
+  const bucket = currentQualityBucketIso();
+  const jobKey = `quality-eval:${payload.organizationId}:${payload.triggerReason ?? "scheduled"}:${bucket}`;
+  const job = await workerUtils.addJob("quality-eval-loop", payload, {
+    maxAttempts: 2,
+    queueName: `quality:${payload.organizationId}`,
+    jobKey
+  });
+
+  return {
+    jobId: job.id,
+    jobKey
+  };
+}
+
+export async function enqueueLowConfidenceReviewQueueJob(
+  payload: LowConfidenceReviewQueueJobPayload
+): Promise<{ jobId: string; jobKey: string }> {
+  const workerUtils = await getWorkerUtils();
+  const bucket = currentQualityBucketIso();
+  const jobKey = `low-confidence:${payload.organizationId}:${bucket}`;
+  const job = await workerUtils.addJob("low-confidence-review-queue", payload, {
+    maxAttempts: 2,
+    queueName: `quality:${payload.organizationId}`,
     jobKey
   });
 

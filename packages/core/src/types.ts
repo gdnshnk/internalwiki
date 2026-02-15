@@ -1,3 +1,5 @@
+import type { AnswerQualityContractResult } from "./answer-quality";
+
 export type ConnectorType =
   | "google_drive"
   | "google_docs"
@@ -163,8 +165,12 @@ export type AssistantQueryRequest = {
   query: string;
   mode: AssistantMode;
   threadId?: string;
+  allowHistoricalEvidence?: boolean;
   filters?: {
     sourceType?: ConnectorType;
+    tags?: string[];
+    ownerId?: string;
+    knowledgeObjectIds?: string[];
     dateRange?: {
       from?: string; // ISO date string
       to?: string; // ISO date string
@@ -202,6 +208,7 @@ export type AssistantQueryResponse = {
     filteredOutCount: number;
     aclMode: "enforced";
   };
+  qualityContract: AnswerQualityContractResult;
   mode: AssistantMode;
   model: string;
   threadId?: string;
@@ -245,6 +252,16 @@ export type ConnectorSyncRunStatus = "running" | "completed" | "failed";
 export type ReviewAction = "approve" | "reject";
 
 export type OrgRole = "owner" | "admin" | "editor" | "viewer";
+
+export type PlanTier = "free" | "pro" | "business" | "enterprise";
+
+export type BillableRole = "creator" | "admin";
+
+export type UsageMeterEvent = {
+  orgId: string;
+  type: "summary_delivered" | "summary_blocked";
+  credits: number;
+};
 
 export type DocumentRecord = {
   id: string;
@@ -381,6 +398,35 @@ export type SessionPolicy = {
   sessionIdleTimeoutMinutes: number;
   concurrentSessionLimit: number;
   forceReauthAfterMinutes: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type UserMemorySensitivity = "low" | "medium" | "high";
+
+export type UserMemorySource = "manual" | "derived";
+
+export type UserMemoryProfile = {
+  organizationId: string;
+  userId: string;
+  personalizationEnabled: boolean;
+  profileSummary?: string;
+  retentionDays: number;
+  policyAcknowledgedAt?: string;
+  lastUsedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type UserMemoryEntry = {
+  id: string;
+  organizationId: string;
+  userId: string;
+  key: string;
+  value: string;
+  sensitivity: UserMemorySensitivity;
+  source: UserMemorySource;
+  expiresAt?: string;
   createdAt: string;
   updatedAt: string;
 };

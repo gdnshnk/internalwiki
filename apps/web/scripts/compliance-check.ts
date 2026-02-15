@@ -49,8 +49,13 @@ async function runChecks(): Promise<CheckResult[]> {
     "apps/web/app/api/orgs/[orgId]/security/domains/[domainId]/route.ts",
     "apps/web/app/api/orgs/[orgId]/security/invites/route.ts",
     "apps/web/app/api/orgs/[orgId]/security/invites/[inviteId]/route.ts",
+    "apps/web/app/api/orgs/[orgId]/security/personalization-memory/route.ts",
     "apps/web/app/api/orgs/[orgId]/security/privacy/dsr/export/route.ts",
-    "apps/web/app/api/orgs/[orgId]/security/privacy/dsr/delete/route.ts"
+    "apps/web/app/api/orgs/[orgId]/security/privacy/dsr/delete/route.ts",
+    "apps/web/app/api/orgs/[orgId]/knowledge/objects/route.ts",
+    "apps/web/app/api/orgs/[orgId]/knowledge/objects/[objectId]/route.ts",
+    "apps/web/app/api/orgs/[orgId]/knowledge/objects/[objectId]/versions/route.ts",
+    "apps/web/app/api/orgs/[orgId]/knowledge/review-queue/[taskId]/route.ts"
   ];
 
   for (const routePath of mutatingRouteFiles) {
@@ -71,10 +76,15 @@ async function runChecks(): Promise<CheckResult[]> {
     "apps/web/app/api/orgs/[orgId]/security/domains/[domainId]/route.ts",
     "apps/web/app/api/orgs/[orgId]/security/invites/route.ts",
     "apps/web/app/api/orgs/[orgId]/security/invites/[inviteId]/route.ts",
+    "apps/web/app/api/orgs/[orgId]/security/personalization-memory/route.ts",
     "apps/web/app/api/orgs/[orgId]/security/session-policies/route.ts",
     "apps/web/app/api/orgs/[orgId]/security/audit/export/route.ts",
     "apps/web/app/api/orgs/[orgId]/security/privacy/dsr/export/route.ts",
-    "apps/web/app/api/orgs/[orgId]/security/privacy/dsr/delete/route.ts"
+    "apps/web/app/api/orgs/[orgId]/security/privacy/dsr/delete/route.ts",
+    "apps/web/app/api/orgs/[orgId]/knowledge/objects/route.ts",
+    "apps/web/app/api/orgs/[orgId]/knowledge/objects/[objectId]/route.ts",
+    "apps/web/app/api/orgs/[orgId]/knowledge/objects/[objectId]/versions/route.ts",
+    "apps/web/app/api/orgs/[orgId]/knowledge/review-queue/[taskId]/route.ts"
   ];
 
   for (const routePath of idempotencyRouteFiles) {

@@ -1,6 +1,7 @@
 import { getSessionContextOptional } from "@/lib/session";
 import { getSetupStatus } from "@/lib/setup-status";
 import { redirect } from "next/navigation";
+import { getAnswerQualityContractSummary } from "@internalwiki/db";
 
 export default async function SetupPage() {
   const session = await getSessionContextOptional();
@@ -13,10 +14,10 @@ export default async function SetupPage() {
     userId: session.userId,
     userEmail: session.email
   });
-
   if (status.readyToAsk) {
     redirect("/app");
   }
+  const contract = await getAnswerQualityContractSummary(session.organizationId);
 
   return (
     <main className="page-wrap">
@@ -47,6 +48,34 @@ export default async function SetupPage() {
           <a href="/app/settings/security" className="chip chip--active setup-permissions-cta">
             Permissions diagnostics
           </a>
+        </div>
+      </section>
+
+      <section className="surface-card">
+        <h2 className="surface-title">Answer quality contract</h2>
+        <p className="surface-sub">
+          Answers are released only when groundedness, freshness, and permission safety checks pass.
+        </p>
+
+        <div className="data-grid" style={{ marginTop: "0.8rem" }}>
+          <div className="data-pill">
+            Groundedness pass rate (7d): {contract.rolling7d.groundednessPassRate.toFixed(2)}%
+          </div>
+          <div className="data-pill">
+            Freshness pass rate (7d): {contract.rolling7d.freshnessPassRate.toFixed(2)}%
+          </div>
+          <div className="data-pill">
+            Permission safety pass rate (7d): {contract.rolling7d.permissionSafetyPassRate.toFixed(2)}%
+          </div>
+          <div className="data-pill">Blocked answers (7d): {contract.rolling7d.blocked}</div>
+          {contract.latest ? (
+            <div className="data-pill">
+              Latest check: {contract.latest.groundednessStatus}/{contract.latest.freshnessStatus}/
+              {contract.latest.permissionSafetyStatus}
+            </div>
+          ) : (
+            <div className="data-pill">Latest check: No evaluations yet</div>
+          )}
         </div>
       </section>
 

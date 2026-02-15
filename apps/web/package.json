@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "eval:retrieval": "tsx --tsconfig tsconfig.json scripts/run-retrieval-eval.ts",
-    "compliance:check": "node --experimental-strip-types scripts/compliance-check.ts"
+    "compliance:check": "node --experimental-strip-types scripts/compliance-check.ts",
+    "contract:check": "node --experimental-strip-types scripts/answer-quality-contract-check.ts"
   },
   "dependencies": {
     "@internalwiki/ai": "0.1.0",

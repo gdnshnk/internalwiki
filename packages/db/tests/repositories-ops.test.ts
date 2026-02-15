@@ -19,14 +19,21 @@ import {
   createIdempotencyKeyRecord,
   getActiveUserSession,
   getConnectorSyncStats,
+  getOrgEntitlements,
+  getOrganizationBillingUsage,
   getIdempotencyKeyRecord,
   getOrCreateSessionPolicy,
+  getOrCreateUserMemoryProfile,
+  getPersonalizationMemoryContext,
   listAuditExportJobs,
+  listUserMemoryEntries,
   getUserOnboardingCompletedAt,
   markUserOnboardingCompleted,
   getRecentDeadLetterEvents,
   getReviewQueueStats,
   revokeUserSession,
+  recordUsageMeterEvent,
+  upsertUserMemoryEntry,
   verifyAuditEventIntegrity
 } from "../src/repositories";
 
@@ -188,6 +195,113 @@ describe("db repositories launch-critical helpers", () => {
     expect(second).toBe("2026-02-14T16:00:00.000Z");
   });
 
+  it("creates and maps user memory profile defaults", async () => {
+    queryMock.mockResolvedValueOnce([
+      {
+        organization_id: "org_1",
+        user_id: "user_1",
+        personalization_enabled: false,
+        profile_summary: null,
+        retention_days: 90,
+        policy_acknowledged_at: null,
+        last_used_at: null,
+        created_at: "2026-02-14T00:00:00.000Z",
+        updated_at: "2026-02-14T00:00:00.000Z"
+      }
+    ]);
+
+    const profile = await getOrCreateUserMemoryProfile({
+      organizationId: "org_1",
+      userId: "user_1",
+      createdBy: "user_1"
+    });
+
+    expect(profile.personalizationEnabled).toBe(false);
+    expect(profile.retentionDays).toBe(90);
+  });
+
+  it("upserts memory entry and lists active entries", async () => {
+    queryMock
+      .mockResolvedValueOnce([
+        {
+          organization_id: "org_1",
+          user_id: "user_1",
+          personalization_enabled: true,
+          profile_summary: "prefers concise",
+          retention_days: 90,
+          policy_acknowledged_at: "2026-02-14T00:00:00.000Z",
+          last_used_at: null,
+          created_at: "2026-02-14T00:00:00.000Z",
+          updated_at: "2026-02-14T00:00:00.000Z"
+        }
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: "mem_1",
+          organization_id: "org_1",
+          user_id: "user_1",
+          memory_key: "tone",
+          memory_value: "direct",
+          sensitivity: "low",
+          source: "manual",
+          expires_at: null,
+          created_at: "2026-02-14T00:00:00.000Z",
+          updated_at: "2026-02-14T00:00:00.000Z"
+        }
+      ])
+      .mockResolvedValueOnce([
+        {
+          id: "mem_1",
+          organization_id: "org_1",
+          user_id: "user_1",
+          memory_key: "tone",
+          memory_value: "direct",
+          sensitivity: "low",
+          source: "manual",
+          expires_at: null,
+          created_at: "2026-02-14T00:00:00.000Z",
+          updated_at: "2026-02-14T00:00:00.000Z"
+        }
+      ]);
+
+    const entry = await upsertUserMemoryEntry({
+      organizationId: "org_1",
+      userId: "user_1",
+      key: "tone",
+      value: "direct"
+    });
+    const entries = await listUserMemoryEntries({
+      organizationId: "org_1",
+      userId: "user_1"
+    });
+
+    expect(entry.key).toBe("tone");
+    expect(entries[0]?.value).toBe("direct");
+  });
+
+  it("returns disabled personalization context when profile opt-in is off", async () => {
+    queryMock.mockResolvedValueOnce([
+      {
+        organization_id: "org_1",
+        user_id: "user_1",
+        personalization_enabled: false,
+        profile_summary: null,
+        retention_days: 90,
+        policy_acknowledged_at: null,
+        last_used_at: null,
+        created_at: "2026-02-14T00:00:00.000Z",
+        updated_at: "2026-02-14T00:00:00.000Z"
+      }
+    ]);
+
+    const context = await getPersonalizationMemoryContext({
+      organizationId: "org_1",
+      userId: "user_1"
+    });
+
+    expect(context.enabled).toBe(false);
+  });
+
   it("returns default session policy shape", async () => {
     queryMock.mockResolvedValueOnce([
       {
@@ -227,6 +341,96 @@ describe("db repositories launch-critical helpers", () => {
     const jobs = await listAuditExportJobs("org_1", 5);
     expect(jobs[0]?.rowsExported).toBe(28);
     expect(jobs[0]?.status).toBe("completed");
+  });
+
+  it("does not bill reader-only seats", async () => {
+    queryMock
+      .mockResolvedValueOnce([
+        {
+          id: "bill_1",
+          organization_id: "org_1",
+          plan_tier: "pro",
+          overage_enabled: true,
+          hard_cap_credits: null,
+          created_at: "2026-02-14T00:00:00.000Z",
+          updated_at: "2026-02-14T00:00:00.000Z"
+        }
+      ])
+      .mockResolvedValueOnce([
+        {
+          admin_count: 1,
+          creator_count: 2,
+          reader_count: 17,
+          total_count: 20
+        }
+      ]);
+
+    const entitlements = await getOrgEntitlements("org_1");
+
+    expect(entitlements.billableSeats.total).toBe(3);
+    expect(entitlements.readerSeats).toBe(17);
+    expect(entitlements.limits.includedCreditsMonthly).toBe(750);
+  });
+
+  it("forces blocked usage events to zero credits", async () => {
+    queryMock.mockResolvedValue([]);
+
+    await recordUsageMeterEvent({
+      orgId: "org_1",
+      type: "summary_delivered",
+      credits: 1
+    });
+    await recordUsageMeterEvent({
+      orgId: "org_1",
+      type: "summary_blocked",
+      credits: 1
+    });
+
+    const deliveredArgs = queryMock.mock.calls[0]?.[1] as unknown[];
+    const blockedArgs = queryMock.mock.calls[1]?.[1] as unknown[];
+    expect(deliveredArgs[3]).toBe(1);
+    expect(blockedArgs[3]).toBe(0);
+  });
+
+  it("computes monthly usage with included credits and blocked counters", async () => {
+    queryMock
+      .mockResolvedValueOnce([
+        {
+          id: "bill_1",
+          organization_id: "org_1",
+          plan_tier: "free",
+          overage_enabled: true,
+          hard_cap_credits: null,
+          created_at: "2026-02-14T00:00:00.000Z",
+          updated_at: "2026-02-14T00:00:00.000Z"
+        }
+      ])
+      .mockResolvedValueOnce([
+        {
+          admin_count: 1,
+          creator_count: 1,
+          reader_count: 8,
+          total_count: 10
+        }
+      ])
+      .mockResolvedValueOnce([
+        {
+          delivered_count: 12,
+          blocked_count: 5,
+          delivered_credits: "12"
+        }
+      ]);
+
+    const usage = await getOrganizationBillingUsage({
+      organizationId: "org_1",
+      periodStart: "2026-02-01T00:00:00.000Z",
+      periodEnd: "2026-03-01T00:00:00.000Z"
+    });
+
+    expect(usage.credits.included).toBe(100);
+    expect(usage.credits.consumed).toBe(12);
+    expect(usage.credits.blockedResponseCount).toBe(5);
+    expect(usage.credits.blockedResponsesCharged).toBe(0);
   });
 
   it("validates audit hash chain integrity", async () => {

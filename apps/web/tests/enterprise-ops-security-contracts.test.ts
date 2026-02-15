@@ -16,7 +16,8 @@ const {
   enqueueAuditExportJobMock,
   writeAuditEventMock,
   beginIdempotentMutationMock,
-  finalizeIdempotentMutationMock
+  finalizeIdempotentMutationMock,
+  requireBusinessFeatureMock
 } = vi.hoisted(() => ({
   requireSessionContextMock: vi.fn(),
   assertScopedOrgAccessMock: vi.fn(),
@@ -33,7 +34,8 @@ const {
   enqueueAuditExportJobMock: vi.fn(),
   writeAuditEventMock: vi.fn(),
   beginIdempotentMutationMock: vi.fn(),
-  finalizeIdempotentMutationMock: vi.fn()
+  finalizeIdempotentMutationMock: vi.fn(),
+  requireBusinessFeatureMock: vi.fn()
 }));
 
 vi.mock("@/lib/api-auth", () => ({
@@ -63,6 +65,10 @@ vi.mock("@/lib/audit", () => ({
 vi.mock("@/lib/idempotency", () => ({
   beginIdempotentMutation: beginIdempotentMutationMock,
   finalizeIdempotentMutation: finalizeIdempotentMutationMock
+}));
+
+vi.mock("@/lib/billing", () => ({
+  requireBusinessFeature: requireBusinessFeatureMock
 }));
 
 vi.mock("@internalwiki/db", () => ({
@@ -101,6 +107,7 @@ describe("enterprise ops/security route contracts", () => {
     assertScopedOrgAccessMock.mockReturnValue(undefined);
     checkRateLimitMock.mockResolvedValue({ allowed: true, retryAfterMs: 0 });
     enforceMutationSecurityMock.mockReturnValue(null);
+    requireBusinessFeatureMock.mockResolvedValue(null);
     beginIdempotentMutationMock.mockResolvedValue({
       keyHash: null,
       method: "POST",

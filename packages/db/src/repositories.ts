@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from "node:crypto";
 import type { PoolClient } from "pg";
 import type {
+  BillableRole,
+  AnswerQualityContractResult,
   AnswerClaim,
   AuditExportJob,
   ChatThreadDetail,
@@ -12,15 +14,21 @@ import type {
   IncidentSummary,
   OrgRole,
   OrganizationDomain,
+  PlanTier,
   RegistrationInvite,
   ReviewAction,
   SessionPolicy,
   SloSummary,
-  SourceScore
+  SourceScore,
+  UserMemorySensitivity,
+  UserMemorySource,
+  UsageMeterEvent
 } from "@internalwiki/core";
 import {
   ACTIVE_CONNECTOR_TYPES,
   ACL_ENFORCED_CONNECTOR_TYPES,
+  ANSWER_QUALITY_CONTRACT_VERSION,
+  ANSWER_QUALITY_POLICY_DEFAULTS,
   GOOGLE_CONNECTOR_TYPES,
   isConnectorType
 } from "@internalwiki/core";
@@ -46,6 +54,8 @@ import type {
   SessionContext,
   SloSummaryRecord,
   SyncRun,
+  UserMemoryEntryRecord,
+  UserMemoryProfileRecord,
   UserSessionRecord
 } from "./types";
 
@@ -236,6 +246,31 @@ type DbSessionPolicyRow = {
   updated_at: string;
 };
 
+type DbUserMemoryProfileRow = {
+  organization_id: string;
+  user_id: string;
+  personalization_enabled: boolean;
+  profile_summary: string | null;
+  retention_days: number;
+  policy_acknowledged_at: string | null;
+  last_used_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type DbUserMemoryEntryRow = {
+  id: string;
+  organization_id: string;
+  user_id: string;
+  memory_key: string;
+  memory_value: string;
+  sensitivity: UserMemorySensitivity;
+  source: UserMemorySource;
+  expires_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 type DbAuditExportJobRow = {
   id: string;
   organization_id: string;
@@ -304,12 +339,92 @@ type DbAclCoverageRow = {
   acl_covered: number;
 };
 
+type DbOrganizationBillingSettingsRow = {
+  id: string;
+  organization_id: string;
+  plan_tier: PlanTier;
+  overage_enabled: boolean;
+  hard_cap_credits: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
+type DbUsageMeterSummaryRow = {
+  delivered_count: number;
+  blocked_count: number;
+  delivered_credits: number | string;
+};
+
+type BillingPlanFeatures = {
+  connectorLimit: number | null;
+  sso: boolean;
+  scim: boolean;
+  auditExport: boolean;
+  compliancePosture: boolean;
+  domainInviteControls: boolean;
+  advancedPermissionsDiagnostics: boolean;
+};
+
+const BILLABLE_ADMIN_MEMBERSHIP_ROLES = ["owner", "admin"] as const satisfies readonly OrgRole[];
+const BILLABLE_CREATOR_MEMBERSHIP_ROLES = ["editor"] as const satisfies readonly OrgRole[];
+
+const BILLING_PLAN_FEATURES: Record<PlanTier, BillingPlanFeatures> = {
+  free: {
+    connectorLimit: 2,
+    sso: false,
+    scim: false,
+    auditExport: false,
+    compliancePosture: false,
+    domainInviteControls: false,
+    advancedPermissionsDiagnostics: false
+  },
+  pro: {
+    connectorLimit: null,
+    sso: false,
+    scim: false,
+    auditExport: false,
+    compliancePosture: false,
+    domainInviteControls: false,
+    advancedPermissionsDiagnostics: false
+  },
+  business: {
+    connectorLimit: null,
+    sso: true,
+    scim: true,
+    auditExport: true,
+    compliancePosture: true,
+    domainInviteControls: true,
+    advancedPermissionsDiagnostics: true
+  },
+  enterprise: {
+    connectorLimit: null,
+    sso: true,
+    scim: true,
+    auditExport: true,
+    compliancePosture: true,
+    domainInviteControls: true,
+    advancedPermissionsDiagnostics: true
+  }
+};
+
 function nowIso(): string {
   return new Date().toISOString();
 }
 
 function hashContent(input: string): string {
   return createHash("sha256").update(input).digest("hex");
+}
+
+function defaultMemoryRetentionDays(): number {
+  const value = Number(process.env.INTERNALWIKI_MEMORY_RETENTION_DAYS ?? 90);
+  if (!Number.isFinite(value)) {
+    return 90;
+  }
+  return Math.min(365, Math.max(7, Math.trunc(value)));
+}
+
+function normalizeMemoryKey(key: string): string {
+  return key.trim().toLowerCase().replace(/\s+/g, "_").slice(0, 64);
 }
 
 function toConnectorType(value: string): ConnectorType {
@@ -476,6 +591,35 @@ function mapSessionPolicy(row: DbSessionPolicyRow): SessionPolicyRecord {
   };
 }
 
+function mapUserMemoryProfile(row: DbUserMemoryProfileRow): UserMemoryProfileRecord {
+  return {
+    organizationId: row.organization_id,
+    userId: row.user_id,
+    personalizationEnabled: row.personalization_enabled,
+    profileSummary: row.profile_summary ?? undefined,
+    retentionDays: row.retention_days,
+    policyAcknowledgedAt: row.policy_acknowledged_at ?? undefined,
+    lastUsedAt: row.last_used_at ?? undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function mapUserMemoryEntry(row: DbUserMemoryEntryRow): UserMemoryEntryRecord {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    userId: row.user_id,
+    key: row.memory_key,
+    value: row.memory_value,
+    sensitivity: row.sensitivity,
+    source: row.source,
+    expiresAt: row.expires_at ?? undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
 function mapAuditExportJob(row: DbAuditExportJobRow): AuditExportJobRecord {
   return {
     id: row.id,
@@ -521,6 +665,378 @@ function mapPrivacyRequest(row: DbPrivacyRequestRow): PrivacyRequestRecord {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     processedAt: row.processed_at ?? undefined
+  };
+}
+
+function isPlanTier(value: string): value is PlanTier {
+  return value === "free" || value === "pro" || value === "business" || value === "enterprise";
+}
+
+function toPlanTier(value: string | undefined): PlanTier {
+  if (!value || !isPlanTier(value)) {
+    return "free";
+  }
+  return value;
+}
+
+function mapOrganizationBillingSettings(row: DbOrganizationBillingSettingsRow): {
+  id: string;
+  organizationId: string;
+  planTier: PlanTier;
+  overageEnabled: boolean;
+  hardCapCredits?: number;
+  createdAt: string;
+  updatedAt: string;
+} {
+  return {
+    id: row.id,
+    organizationId: row.organization_id,
+    planTier: toPlanTier(row.plan_tier),
+    overageEnabled: row.overage_enabled,
+    hardCapCredits: row.hard_cap_credits ?? undefined,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
+
+function includedCreditsByPlanTier(input: {
+  planTier: PlanTier;
+  billableSeatCount: number;
+}): number {
+  switch (input.planTier) {
+    case "free":
+      return 100;
+    case "pro":
+      return Math.max(0, input.billableSeatCount) * 250;
+    case "business":
+      return Math.max(0, input.billableSeatCount) * 500;
+    case "enterprise":
+      return Math.max(0, input.billableSeatCount) * 500;
+    default:
+      return 0;
+  }
+}
+
+function monthWindowUtc(now = new Date()): { periodStart: string; periodEnd: string } {
+  const periodStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const periodEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
+  return {
+    periodStart: periodStart.toISOString(),
+    periodEnd: periodEnd.toISOString()
+  };
+}
+
+export async function getOrCreateOrganizationBillingSettings(organizationId: string): Promise<{
+  id: string;
+  organizationId: string;
+  planTier: PlanTier;
+  overageEnabled: boolean;
+  hardCapCredits?: number;
+  createdAt: string;
+  updatedAt: string;
+}> {
+  const rows = await queryOrg<DbOrganizationBillingSettingsRow>(
+    organizationId,
+    `
+      INSERT INTO organization_billing_settings (
+        id,
+        organization_id,
+        plan_tier,
+        overage_enabled,
+        hard_cap_credits,
+        created_by
+      ) VALUES (
+        $1,
+        $2,
+        $3,
+        TRUE,
+        NULL,
+        NULL
+      )
+      ON CONFLICT (organization_id)
+      DO UPDATE SET organization_id = EXCLUDED.organization_id
+      RETURNING
+        id,
+        organization_id,
+        plan_tier,
+        overage_enabled,
+        hard_cap_credits,
+        created_at,
+        updated_at
+    `,
+    [
+      randomUUID(),
+      organizationId,
+      toPlanTier(process.env.INTERNALWIKI_DEFAULT_PLAN_TIER)
+    ]
+  );
+
+  return mapOrganizationBillingSettings(rows[0]);
+}
+
+export async function updateOrganizationBillingPlan(input: {
+  organizationId: string;
+  planTier: PlanTier;
+  overageEnabled?: boolean;
+  hardCapCredits?: number;
+  createdBy?: string;
+}): Promise<{
+  id: string;
+  organizationId: string;
+  planTier: PlanTier;
+  overageEnabled: boolean;
+  hardCapCredits?: number;
+  createdAt: string;
+  updatedAt: string;
+}> {
+  const rows = await queryOrg<DbOrganizationBillingSettingsRow>(
+    input.organizationId,
+    `
+      INSERT INTO organization_billing_settings (
+        id,
+        organization_id,
+        plan_tier,
+        overage_enabled,
+        hard_cap_credits,
+        created_by
+      ) VALUES ($1, $2, $3, $4, $5, $6)
+      ON CONFLICT (organization_id)
+      DO UPDATE SET
+        plan_tier = EXCLUDED.plan_tier,
+        overage_enabled = EXCLUDED.overage_enabled,
+        hard_cap_credits = EXCLUDED.hard_cap_credits,
+        updated_at = NOW()
+      RETURNING
+        id,
+        organization_id,
+        plan_tier,
+        overage_enabled,
+        hard_cap_credits,
+        created_at,
+        updated_at
+    `,
+    [
+      randomUUID(),
+      input.organizationId,
+      input.planTier,
+      input.overageEnabled ?? true,
+      input.hardCapCredits ?? null,
+      input.createdBy ?? null
+    ]
+  );
+
+  return mapOrganizationBillingSettings(rows[0]);
+}
+
+export async function getOrganizationBillableSeatCounts(organizationId: string): Promise<{
+  admin: number;
+  creator: number;
+  reader: number;
+  total: number;
+}> {
+  const rows = await queryOrg<{
+    admin_count: number;
+    creator_count: number;
+    reader_count: number;
+    total_count: number;
+  }>(
+    organizationId,
+    `
+      SELECT
+        COUNT(*) FILTER (WHERE role = ANY($2::text[]))::int AS admin_count,
+        COUNT(*) FILTER (WHERE role = ANY($3::text[]))::int AS creator_count,
+        COUNT(*) FILTER (WHERE role = 'viewer')::int AS reader_count,
+        COUNT(*)::int AS total_count
+      FROM memberships
+      WHERE organization_id = $1
+    `,
+    [
+      organizationId,
+      BILLABLE_ADMIN_MEMBERSHIP_ROLES,
+      BILLABLE_CREATOR_MEMBERSHIP_ROLES
+    ]
+  );
+
+  const seatCounts = rows[0];
+  return {
+    admin: Number(seatCounts?.admin_count ?? 0),
+    creator: Number(seatCounts?.creator_count ?? 0),
+    reader: Number(seatCounts?.reader_count ?? 0),
+    total: Number(seatCounts?.total_count ?? 0)
+  };
+}
+
+export async function getOrgEntitlements(organizationId: string): Promise<{
+  organizationId: string;
+  planTier: PlanTier;
+  billableRoles: BillableRole[];
+  billableSeats: {
+    admin: number;
+    creator: number;
+    total: number;
+  };
+  readerSeats: number;
+  limits: {
+    connectorLimit: number | null;
+    includedCreditsMonthly: number;
+    overageEnabled: boolean;
+    hardCapCredits?: number;
+  };
+  features: BillingPlanFeatures;
+}> {
+  const [settings, seatCounts] = await Promise.all([
+    getOrCreateOrganizationBillingSettings(organizationId),
+    getOrganizationBillableSeatCounts(organizationId)
+  ]);
+
+  const billableTotal = seatCounts.admin + seatCounts.creator;
+
+  return {
+    organizationId,
+    planTier: settings.planTier,
+    billableRoles: ["creator", "admin"],
+    billableSeats: {
+      admin: seatCounts.admin,
+      creator: seatCounts.creator,
+      total: billableTotal
+    },
+    readerSeats: seatCounts.reader,
+    limits: {
+      connectorLimit: BILLING_PLAN_FEATURES[settings.planTier].connectorLimit,
+      includedCreditsMonthly: includedCreditsByPlanTier({
+        planTier: settings.planTier,
+        billableSeatCount: billableTotal
+      }),
+      overageEnabled: settings.overageEnabled,
+      hardCapCredits: settings.hardCapCredits
+    },
+    features: BILLING_PLAN_FEATURES[settings.planTier]
+  };
+}
+
+export async function recordUsageMeterEvent(
+  input: UsageMeterEvent & {
+    createdBy?: string;
+    metadata?: Record<string, unknown>;
+  }
+): Promise<void> {
+  const credits = input.type === "summary_blocked" ? 0 : Math.max(0, Number(input.credits ?? 0));
+
+  await queryOrg(
+    input.orgId,
+    `
+      INSERT INTO usage_meter_events (
+        id,
+        organization_id,
+        event_type,
+        credits,
+        metadata,
+        created_by
+      ) VALUES ($1, $2, $3, $4, $5::jsonb, $6)
+    `,
+    [randomUUID(), input.orgId, input.type, credits, JSON.stringify(input.metadata ?? {}), input.createdBy ?? null]
+  );
+}
+
+export async function getOrganizationBillingUsage(input: {
+  organizationId: string;
+  periodStart?: string;
+  periodEnd?: string;
+}): Promise<{
+  organizationId: string;
+  periodStart: string;
+  periodEnd: string;
+  planTier: PlanTier;
+  seats: {
+    billable: number;
+    admin: number;
+    creator: number;
+    reader: number;
+  };
+  credits: {
+    included: number;
+    consumed: number;
+    remaining: number;
+    overage: number;
+    overageRateUsdPerCredit: number;
+    blockedResponseCount: number;
+    deliveredResponseCount: number;
+    blockedResponsesCharged: 0;
+    spendAlerts: {
+      at80Percent: boolean;
+      at100Percent: boolean;
+      at120Percent: boolean;
+    };
+    hardCapCredits?: number;
+    overageEnabled: boolean;
+  };
+}> {
+  const defaultWindow = monthWindowUtc();
+  const periodStart = input.periodStart ?? defaultWindow.periodStart;
+  const periodEnd = input.periodEnd ?? defaultWindow.periodEnd;
+
+  const [entitlements, usageRows] = await Promise.all([
+    getOrgEntitlements(input.organizationId),
+    queryOrg<DbUsageMeterSummaryRow>(
+      input.organizationId,
+      `
+        SELECT
+          COUNT(*) FILTER (WHERE event_type = 'summary_delivered')::int AS delivered_count,
+          COUNT(*) FILTER (WHERE event_type = 'summary_blocked')::int AS blocked_count,
+          COALESCE(SUM(CASE WHEN event_type = 'summary_delivered' THEN credits ELSE 0 END), 0) AS delivered_credits
+        FROM usage_meter_events
+        WHERE organization_id = $1
+          AND occurred_at >= $2::timestamptz
+          AND occurred_at < $3::timestamptz
+      `,
+      [input.organizationId, periodStart, periodEnd]
+    )
+  ]);
+
+  const usage = usageRows[0];
+  const consumed = Number(usage?.delivered_credits ?? 0);
+  const included = entitlements.limits.includedCreditsMonthly;
+  const remaining = Math.max(0, included - consumed);
+  const overage = Math.max(0, consumed - included);
+  const at80Percent = included > 0 ? consumed >= included * 0.8 : consumed > 0;
+  const at100Percent = included > 0 ? consumed >= included : consumed > 0;
+  const at120Percent = included > 0 ? consumed >= included * 1.2 : consumed > 0;
+
+  const overageRateUsdPerCredit =
+    entitlements.planTier === "business" || entitlements.planTier === "enterprise"
+      ? 0.18
+      : entitlements.planTier === "pro"
+        ? 0.25
+        : 0.3;
+
+  return {
+    organizationId: input.organizationId,
+    periodStart,
+    periodEnd,
+    planTier: entitlements.planTier,
+    seats: {
+      billable: entitlements.billableSeats.total,
+      admin: entitlements.billableSeats.admin,
+      creator: entitlements.billableSeats.creator,
+      reader: entitlements.readerSeats
+    },
+    credits: {
+      included,
+      consumed,
+      remaining,
+      overage,
+      overageRateUsdPerCredit,
+      blockedResponseCount: Number(usage?.blocked_count ?? 0),
+      deliveredResponseCount: Number(usage?.delivered_count ?? 0),
+      blockedResponsesCharged: 0,
+      spendAlerts: {
+        at80Percent,
+        at100Percent,
+        at120Percent
+      },
+      hardCapCredits: entitlements.limits.hardCapCredits,
+      overageEnabled: entitlements.limits.overageEnabled
+    }
   };
 }
 
@@ -1515,8 +2031,25 @@ export async function createAnswerVerificationRun(input: {
   citationCoverage: number;
   unsupportedClaims: number;
   permissionFilteredOutCount?: number;
+  qualityContract?: AnswerQualityContractResult;
   createdBy?: string;
 }): Promise<void> {
+  const groundedStatus = input.qualityContract?.dimensions.groundedness.status ?? input.status;
+  const freshnessStatus = input.qualityContract?.dimensions.freshness.status ?? input.status;
+  const permissionStatus = input.qualityContract?.dimensions.permissionSafety.status ?? input.status;
+  const freshnessWindowDays =
+    input.qualityContract?.dimensions.freshness.metrics.freshnessWindowDays ??
+    input.qualityContract?.policy.freshness.windowDays ??
+    ANSWER_QUALITY_POLICY_DEFAULTS.freshness.windowDays;
+  const freshnessCoverage =
+    input.qualityContract?.dimensions.freshness.metrics.citationFreshnessCoverage ?? null;
+  const staleCitationCount =
+    input.qualityContract?.dimensions.freshness.metrics.staleCitationCount ?? null;
+  const citationCount =
+    input.qualityContract?.dimensions.groundedness.metrics.citationCount ??
+    input.qualityContract?.dimensions.freshness.metrics.citationCount ??
+    null;
+
   await query(
     `
       INSERT INTO answer_verification_runs (
@@ -1528,8 +2061,17 @@ export async function createAnswerVerificationRun(input: {
         citation_coverage,
         unsupported_claims,
         permission_filtered_out_count,
+        contract_version,
+        grounded_status,
+        freshness_status,
+        permission_status,
+        freshness_window_days,
+        freshness_coverage,
+        stale_citation_count,
+        citation_count,
+        historical_override,
         created_by
-      ) VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9)
+      ) VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
       ON CONFLICT (organization_id, chat_message_id)
       DO UPDATE SET
         status = EXCLUDED.status,
@@ -1537,6 +2079,15 @@ export async function createAnswerVerificationRun(input: {
         citation_coverage = EXCLUDED.citation_coverage,
         unsupported_claims = EXCLUDED.unsupported_claims,
         permission_filtered_out_count = EXCLUDED.permission_filtered_out_count,
+        contract_version = EXCLUDED.contract_version,
+        grounded_status = EXCLUDED.grounded_status,
+        freshness_status = EXCLUDED.freshness_status,
+        permission_status = EXCLUDED.permission_status,
+        freshness_window_days = EXCLUDED.freshness_window_days,
+        freshness_coverage = EXCLUDED.freshness_coverage,
+        stale_citation_count = EXCLUDED.stale_citation_count,
+        citation_count = EXCLUDED.citation_count,
+        historical_override = EXCLUDED.historical_override,
         updated_at = NOW()
     `,
     [
@@ -1548,6 +2099,15 @@ export async function createAnswerVerificationRun(input: {
       input.citationCoverage,
       input.unsupportedClaims,
       input.permissionFilteredOutCount ?? 0,
+      input.qualityContract?.version ?? ANSWER_QUALITY_CONTRACT_VERSION,
+      groundedStatus,
+      freshnessStatus,
+      permissionStatus,
+      freshnessWindowDays,
+      freshnessCoverage,
+      staleCitationCount,
+      citationCount,
+      input.qualityContract?.allowHistoricalEvidence ?? false,
       input.createdBy ?? null
     ]
   );
@@ -1607,6 +2167,176 @@ export async function getLatestVerificationStatus(organizationId: string): Promi
           citationCoverage: Number(latest[0].citation_coverage),
           unsupportedClaims: Number(latest[0].unsupported_claims),
           createdAt: latest[0].created_at
+        }
+      : undefined
+  };
+}
+
+export async function getAnswerQualityContractSummary(organizationId: string): Promise<{
+  version: string;
+  policy: {
+    groundedness: {
+      requireCitations: boolean;
+      minCitationCoverage: number;
+      maxUnsupportedClaims: number;
+    };
+    freshness: {
+      windowDays: number;
+      minFreshCitationCoverage: number;
+    };
+    permissionSafety: {
+      mode: "fail_closed";
+    };
+  };
+  rolling7d: {
+    total: number;
+    blocked: number;
+    passRate: number;
+    groundednessPassRate: number;
+    freshnessPassRate: number;
+    permissionSafetyPassRate: number;
+  };
+  latest?: {
+    status: "passed" | "blocked";
+    groundednessStatus: "passed" | "blocked";
+    freshnessStatus: "passed" | "blocked";
+    permissionSafetyStatus: "passed" | "blocked";
+    citationCoverage: number;
+    unsupportedClaims: number;
+    freshnessCoverage?: number;
+    staleCitationCount?: number;
+    citationCount?: number;
+    historicalOverride: boolean;
+    reasons: string[];
+    createdAt: string;
+  };
+}> {
+  const [rollingRows, latestRows] = await Promise.all([
+    query<{
+      total: number;
+      blocked: number;
+      grounded_passed: number;
+      freshness_passed: number;
+      permission_passed: number;
+    }>(
+      `
+        SELECT
+          COUNT(*)::int AS total,
+          COUNT(*) FILTER (WHERE status = 'blocked')::int AS blocked,
+          COUNT(*) FILTER (WHERE COALESCE(grounded_status, status) = 'passed')::int AS grounded_passed,
+          COUNT(*) FILTER (WHERE COALESCE(freshness_status, status) = 'passed')::int AS freshness_passed,
+          COUNT(*) FILTER (WHERE COALESCE(permission_status, status) = 'passed')::int AS permission_passed
+        FROM answer_verification_runs
+        WHERE organization_id = $1
+          AND created_at >= NOW() - INTERVAL '7 days'
+      `,
+      [organizationId]
+    ),
+    query<{
+      status: "passed" | "blocked";
+      grounded_status: "passed" | "blocked" | null;
+      freshness_status: "passed" | "blocked" | null;
+      permission_status: "passed" | "blocked" | null;
+      citation_coverage: number;
+      unsupported_claims: number;
+      freshness_coverage: number | null;
+      stale_citation_count: number | null;
+      citation_count: number | null;
+      historical_override: boolean;
+      reasons: unknown;
+      created_at: string;
+    }>(
+      `
+        SELECT
+          status,
+          grounded_status,
+          freshness_status,
+          permission_status,
+          citation_coverage,
+          unsupported_claims,
+          freshness_coverage,
+          stale_citation_count,
+          citation_count,
+          historical_override,
+          reasons,
+          created_at
+        FROM answer_verification_runs
+        WHERE organization_id = $1
+        ORDER BY created_at DESC
+        LIMIT 1
+      `,
+      [organizationId]
+    )
+  ]);
+
+  const rolling = rollingRows[0] ?? {
+    total: 0,
+    blocked: 0,
+    grounded_passed: 0,
+    freshness_passed: 0,
+    permission_passed: 0
+  };
+  const total = Number(rolling.total);
+  const blocked = Number(rolling.blocked);
+  const passRate = total > 0 ? Number((((total - blocked) / total) * 100).toFixed(2)) : 100;
+  const groundednessPassRate =
+    total > 0 ? Number(((Number(rolling.grounded_passed) / total) * 100).toFixed(2)) : 100;
+  const freshnessPassRate =
+    total > 0 ? Number(((Number(rolling.freshness_passed) / total) * 100).toFixed(2)) : 100;
+  const permissionSafetyPassRate =
+    total > 0 ? Number(((Number(rolling.permission_passed) / total) * 100).toFixed(2)) : 100;
+
+  const latest = latestRows[0];
+  const latestReasons =
+    latest && Array.isArray(latest.reasons)
+      ? latest.reasons.filter((entry): entry is string => typeof entry === "string")
+      : [];
+
+  return {
+    version: ANSWER_QUALITY_CONTRACT_VERSION,
+    policy: {
+      groundedness: {
+        requireCitations: ANSWER_QUALITY_POLICY_DEFAULTS.groundedness.requireCitations,
+        minCitationCoverage: ANSWER_QUALITY_POLICY_DEFAULTS.groundedness.minCitationCoverage,
+        maxUnsupportedClaims: ANSWER_QUALITY_POLICY_DEFAULTS.groundedness.maxUnsupportedClaims
+      },
+      freshness: {
+        windowDays: ANSWER_QUALITY_POLICY_DEFAULTS.freshness.windowDays,
+        minFreshCitationCoverage: ANSWER_QUALITY_POLICY_DEFAULTS.freshness.minFreshCitationCoverage
+      },
+      permissionSafety: {
+        mode: ANSWER_QUALITY_POLICY_DEFAULTS.permissionSafety.mode
+      }
+    },
+    rolling7d: {
+      total,
+      blocked,
+      passRate,
+      groundednessPassRate,
+      freshnessPassRate,
+      permissionSafetyPassRate
+    },
+    latest: latest
+      ? {
+          status: latest.status,
+          groundednessStatus: latest.grounded_status ?? latest.status,
+          freshnessStatus: latest.freshness_status ?? latest.status,
+          permissionSafetyStatus: latest.permission_status ?? latest.status,
+          citationCoverage: Number(latest.citation_coverage),
+          unsupportedClaims: Number(latest.unsupported_claims),
+          freshnessCoverage:
+            typeof latest.freshness_coverage === "number"
+              ? Number(latest.freshness_coverage)
+              : undefined,
+          staleCitationCount:
+            typeof latest.stale_citation_count === "number"
+              ? Number(latest.stale_citation_count)
+              : undefined,
+          citationCount:
+            typeof latest.citation_count === "number" ? Number(latest.citation_count) : undefined,
+          historicalOverride: Boolean(latest.historical_override),
+          reasons: latestReasons,
+          createdAt: latest.created_at
         }
       : undefined
   };
@@ -4255,6 +4985,119 @@ export async function listEvalRuns(
   }));
 }
 
+export async function getAnswerVerificationWindowStats(input: {
+  organizationId: string;
+  windowMinutes?: number;
+}): Promise<{
+  total: number;
+  blocked: number;
+  passRate: number;
+  groundednessBlocked: number;
+  freshnessBlocked: number;
+  permissionSafetyBlocked: number;
+}> {
+  const windowMinutes = Math.max(1, input.windowMinutes ?? 30);
+  const rows = await queryOrg<{
+    total: number;
+    blocked: number;
+    groundedness_blocked: number;
+    freshness_blocked: number;
+    permission_blocked: number;
+  }>(
+    input.organizationId,
+    `
+      SELECT
+        COUNT(*)::int AS total,
+        COUNT(*) FILTER (WHERE status = 'blocked')::int AS blocked,
+        COUNT(*) FILTER (WHERE COALESCE(grounded_status, status) = 'blocked')::int AS groundedness_blocked,
+        COUNT(*) FILTER (WHERE COALESCE(freshness_status, status) = 'blocked')::int AS freshness_blocked,
+        COUNT(*) FILTER (WHERE COALESCE(permission_status, status) = 'blocked')::int AS permission_blocked
+      FROM answer_verification_runs
+      WHERE organization_id = $1
+        AND created_at >= NOW() - ($2::int * INTERVAL '1 minute')
+    `,
+    [input.organizationId, windowMinutes]
+  );
+
+  const total = Number(rows[0]?.total ?? 0);
+  const blocked = Number(rows[0]?.blocked ?? 0);
+  const passRate = total > 0 ? Number((((total - blocked) / total) * 100).toFixed(2)) : 100;
+  return {
+    total,
+    blocked,
+    passRate,
+    groundednessBlocked: Number(rows[0]?.groundedness_blocked ?? 0),
+    freshnessBlocked: Number(rows[0]?.freshness_blocked ?? 0),
+    permissionSafetyBlocked: Number(rows[0]?.permission_blocked ?? 0)
+  };
+}
+
+export async function listRecentAnswerVerificationRuns(input: {
+  organizationId: string;
+  windowMinutes?: number;
+  limit?: number;
+}): Promise<
+  Array<{
+    chatMessageId: string;
+    status: "passed" | "blocked";
+    groundednessStatus: "passed" | "blocked";
+    freshnessStatus: "passed" | "blocked";
+    permissionSafetyStatus: "passed" | "blocked";
+    citationCoverage: number;
+    unsupportedClaims: number;
+    reasons: string[];
+    createdAt: string;
+  }>
+> {
+  const windowMinutes = Math.max(1, input.windowMinutes ?? 30);
+  const limit = Math.max(1, input.limit ?? 25);
+  const rows = await queryOrg<{
+    chat_message_id: string;
+    status: "passed" | "blocked";
+    grounded_status: "passed" | "blocked" | null;
+    freshness_status: "passed" | "blocked" | null;
+    permission_status: "passed" | "blocked" | null;
+    citation_coverage: number;
+    unsupported_claims: number;
+    reasons: unknown;
+    created_at: string;
+  }>(
+    input.organizationId,
+    `
+      SELECT
+        chat_message_id,
+        status,
+        grounded_status,
+        freshness_status,
+        permission_status,
+        citation_coverage,
+        unsupported_claims,
+        reasons,
+        created_at
+      FROM answer_verification_runs
+      WHERE organization_id = $1
+        AND created_at >= NOW() - ($2::int * INTERVAL '1 minute')
+      ORDER BY created_at DESC
+      LIMIT $3
+    `,
+    [input.organizationId, windowMinutes, limit]
+  );
+
+  return rows.map((row) => ({
+    chatMessageId: row.chat_message_id,
+    status: row.status,
+    groundednessStatus: row.grounded_status ?? row.status,
+    freshnessStatus: row.freshness_status ?? row.status,
+    permissionSafetyStatus: row.permission_status ?? row.status,
+    citationCoverage: Number(row.citation_coverage),
+    unsupportedClaims: Number(row.unsupported_claims),
+    reasons: Array.isArray(row.reasons)
+      ? row.reasons.filter((entry): entry is string => typeof entry === "string")
+      : [],
+    createdAt: row.created_at
+  }));
+}
+
 export async function cleanupExpiredSessions(maxRows = 2000): Promise<number> {
   const rows = await querySystem<{ id: string }>(
     `
@@ -4321,7 +5164,7 @@ export async function exportUserPrivacyData(input: {
   organizationId: string;
   userId: string;
 }): Promise<Record<string, unknown>> {
-  const [user, sessions, identities, threads, messages] = await Promise.all([
+  const [user, sessions, identities, threads, messages, memoryProfile, memoryEntries] = await Promise.all([
     queryOrg<{
       id: string;
       email: string;
@@ -4432,6 +5275,48 @@ export async function exportUserPrivacyData(input: {
         LIMIT 2000
       `,
       [input.organizationId, input.userId]
+    ),
+    queryOrg<DbUserMemoryProfileRow>(
+      input.organizationId,
+      `
+        SELECT
+          organization_id,
+          user_id,
+          personalization_enabled,
+          profile_summary,
+          retention_days,
+          policy_acknowledged_at,
+          last_used_at,
+          created_at,
+          updated_at
+        FROM user_memory_profiles
+        WHERE organization_id = $1
+          AND user_id = $2
+        LIMIT 1
+      `,
+      [input.organizationId, input.userId]
+    ),
+    queryOrg<DbUserMemoryEntryRow>(
+      input.organizationId,
+      `
+        SELECT
+          id,
+          organization_id,
+          user_id,
+          memory_key,
+          memory_value,
+          sensitivity,
+          source,
+          expires_at,
+          created_at,
+          updated_at
+        FROM user_memory_entries
+        WHERE organization_id = $1
+          AND user_id = $2
+        ORDER BY updated_at DESC
+        LIMIT 200
+      `,
+      [input.organizationId, input.userId]
     )
   ]);
 
@@ -4475,7 +5360,9 @@ export async function exportUserPrivacyData(input: {
       role: row.role,
       messageText: row.message_text,
       createdAt: row.created_at
-    }))
+    })),
+    memoryProfile: memoryProfile[0] ? mapUserMemoryProfile(memoryProfile[0]) : null,
+    memoryEntries: memoryEntries.map(mapUserMemoryEntry)
   };
 }
 
@@ -4528,7 +5415,9 @@ export async function createPrivacyExportRequest(input: {
           sessions: Array.isArray(data.sessions) ? data.sessions.length : 0,
           chatThreads: Array.isArray(data.chatThreads) ? data.chatThreads.length : 0,
           chatMessages: Array.isArray(data.chatMessages) ? data.chatMessages.length : 0,
-          sourceIdentities: Array.isArray(data.sourceIdentities) ? data.sourceIdentities.length : 0
+          sourceIdentities: Array.isArray(data.sourceIdentities) ? data.sourceIdentities.length : 0,
+          memoryEntries: Array.isArray(data.memoryEntries) ? data.memoryEntries.length : 0,
+          memoryProfile: data.memoryProfile ? 1 : 0
         }
       })
     ]
@@ -4555,6 +5444,8 @@ export async function createPrivacyDeleteRequest(input: {
     chatMessages: number;
     chatThreads: number;
     assistantFeedback: number;
+    memoryEntries: number;
+    memoryProfiles: number;
   };
 }> {
   const legalHoldBlocked = await hasActiveLegalHold({
@@ -4613,7 +5504,9 @@ export async function createPrivacyDeleteRequest(input: {
         sourceIdentities: 0,
         chatMessages: 0,
         chatThreads: 0,
-        assistantFeedback: 0
+        assistantFeedback: 0,
+        memoryEntries: 0,
+        memoryProfiles: 0
       }
     };
   }
@@ -4665,6 +5558,26 @@ export async function createPrivacyDeleteRequest(input: {
       [input.organizationId, input.subjectUserId]
     );
 
+    const memoryEntries = await client.query<{ id: string }>(
+      `
+        DELETE FROM user_memory_entries
+        WHERE organization_id = $1
+          AND user_id = $2
+        RETURNING id
+      `,
+      [input.organizationId, input.subjectUserId]
+    );
+
+    const memoryProfiles = await client.query<{ id: string }>(
+      `
+        DELETE FROM user_memory_profiles
+        WHERE organization_id = $1
+          AND user_id = $2
+        RETURNING id
+      `,
+      [input.organizationId, input.subjectUserId]
+    );
+
     const sessions = await client.query<{ id: string }>(
       `
         DELETE FROM user_sessions
@@ -4708,7 +5621,9 @@ export async function createPrivacyDeleteRequest(input: {
       sourceIdentities: sourceIdentities.rows.length,
       chatMessages: chatMessages.rows.length,
       chatThreads: chatThreads.rows.length,
-      assistantFeedback: assistantFeedback.rows.length
+      assistantFeedback: assistantFeedback.rows.length,
+      memoryEntries: memoryEntries.rows.length,
+      memoryProfiles: memoryProfiles.rows.length
     };
   });
 
@@ -4797,8 +5712,10 @@ export async function getCompliancePostureSummary(input: {
   activeLegalHolds: number;
   pendingPrivacyRequests: number;
   completedPrivacyRequestsLast30d: number;
+  memoryProfilesEnabled: number;
+  memoryEntries: number;
 }> {
-  const [holds, requests] = await Promise.all([
+  const [holds, requests, memory] = await Promise.all([
     queryOrg<{ count: string }>(
       input.organizationId,
       `
@@ -4822,13 +5739,30 @@ export async function getCompliancePostureSummary(input: {
         WHERE organization_id = $1
       `,
       [input.organizationId]
+    ),
+    queryOrg<{ enabled: string; entries: string }>(
+      input.organizationId,
+      `
+        SELECT
+          COUNT(*) FILTER (WHERE personalization_enabled = TRUE)::text AS enabled,
+          (
+            SELECT COUNT(*)::text
+            FROM user_memory_entries ume
+            WHERE ume.organization_id = $1
+          ) AS entries
+        FROM user_memory_profiles
+        WHERE organization_id = $1
+      `,
+      [input.organizationId]
     )
   ]);
 
   return {
     activeLegalHolds: Number(holds[0]?.count ?? 0),
     pendingPrivacyRequests: Number(requests[0]?.pending ?? 0),
-    completedPrivacyRequestsLast30d: Number(requests[0]?.completed ?? 0)
+    completedPrivacyRequestsLast30d: Number(requests[0]?.completed ?? 0),
+    memoryProfilesEnabled: Number(memory[0]?.enabled ?? 0),
+    memoryEntries: Number(memory[0]?.entries ?? 0)
   };
 }
 
@@ -4840,12 +5774,13 @@ export async function cleanupPrivacyRetention(input?: {
   chatMessagesDeleted: number;
   chatThreadsDeleted: number;
   privacyRequestsDeleted: number;
+  memoryEntriesDeleted: number;
 }> {
   const retentionDays = Math.max(1, input?.retentionDays ?? 90);
   const maxRows = Math.max(100, input?.maxRowsPerTable ?? 5000);
   const cutoff = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000).toISOString();
 
-  const [assistantFeedbackRows, chatMessageRows, chatThreadRows, privacyRequestRows] = await Promise.all([
+  const [assistantFeedbackRows, chatMessageRows, chatThreadRows, privacyRequestRows, memoryEntryRows] = await Promise.all([
     querySystem<{ id: string }>(
       `
         DELETE FROM assistant_feedback af
@@ -4928,6 +5863,36 @@ export async function cleanupPrivacyRetention(input?: {
         RETURNING pr.id
       `,
       [cutoff, maxRows]
+    ),
+    querySystem<{ id: string }>(
+      `
+        DELETE FROM user_memory_entries ume
+        WHERE ume.id IN (
+          SELECT ume_inner.id
+          FROM user_memory_entries ume_inner
+          WHERE (
+              ume_inner.expires_at IS NOT NULL
+              AND ume_inner.expires_at < NOW()
+            )
+            OR (
+              ume_inner.created_at < $1::timestamptz
+              AND NOT EXISTS (
+                SELECT 1
+                FROM legal_holds lh
+                WHERE lh.organization_id = ume_inner.organization_id
+                  AND lh.active = TRUE
+                  AND (
+                    lh.scope = 'organization'
+                    OR (lh.scope = 'user' AND lh.user_id = ume_inner.user_id)
+                  )
+              )
+            )
+          ORDER BY ume_inner.updated_at ASC
+          LIMIT $2
+        )
+        RETURNING ume.id
+      `,
+      [cutoff, maxRows]
     )
   ]);
 
@@ -4935,7 +5900,8 @@ export async function cleanupPrivacyRetention(input?: {
     assistantFeedbackDeleted: assistantFeedbackRows.length,
     chatMessagesDeleted: chatMessageRows.length,
     chatThreadsDeleted: chatThreadRows.length,
-    privacyRequestsDeleted: privacyRequestRows.length
+    privacyRequestsDeleted: privacyRequestRows.length,
+    memoryEntriesDeleted: memoryEntryRows.length
   };
 }
 
@@ -5054,6 +6020,360 @@ export async function markUserOnboardingCompleted(userId: string): Promise<strin
   );
 
   return rows[0]?.onboarding_completed_at ?? undefined;
+}
+
+export async function getOrCreateUserMemoryProfile(input: {
+  organizationId: string;
+  userId: string;
+  createdBy?: string;
+}): Promise<UserMemoryProfileRecord> {
+  const rows = await queryOrg<DbUserMemoryProfileRow>(
+    input.organizationId,
+    `
+      INSERT INTO user_memory_profiles (
+        id,
+        organization_id,
+        user_id,
+        personalization_enabled,
+        profile_summary,
+        retention_days,
+        policy_acknowledged_at,
+        last_used_at,
+        created_by
+      ) VALUES ($1, $2, $3, FALSE, NULL, $4, NULL, NULL, $5)
+      ON CONFLICT (organization_id, user_id)
+      DO UPDATE SET
+        updated_at = user_memory_profiles.updated_at
+      RETURNING
+        organization_id,
+        user_id,
+        personalization_enabled,
+        profile_summary,
+        retention_days,
+        policy_acknowledged_at,
+        last_used_at,
+        created_at,
+        updated_at
+    `,
+    [randomUUID(), input.organizationId, input.userId, defaultMemoryRetentionDays(), input.createdBy ?? null]
+  );
+
+  return mapUserMemoryProfile(rows[0]);
+}
+
+export async function updateUserMemoryProfile(input: {
+  organizationId: string;
+  userId: string;
+  personalizationEnabled?: boolean;
+  profileSummary?: string | null;
+  retentionDays?: number;
+  createdBy?: string;
+}): Promise<UserMemoryProfileRecord> {
+  await getOrCreateUserMemoryProfile({
+    organizationId: input.organizationId,
+    userId: input.userId,
+    createdBy: input.createdBy
+  });
+
+  const retentionDays =
+    typeof input.retentionDays === "number" && Number.isFinite(input.retentionDays)
+      ? Math.min(365, Math.max(7, Math.trunc(input.retentionDays)))
+      : undefined;
+
+  const rows = await queryOrg<DbUserMemoryProfileRow>(
+    input.organizationId,
+    `
+      UPDATE user_memory_profiles
+      SET
+        personalization_enabled = COALESCE($3, personalization_enabled),
+        profile_summary = CASE WHEN $4::boolean THEN $5 ELSE profile_summary END,
+        retention_days = COALESCE($6, retention_days),
+        policy_acknowledged_at = CASE
+          WHEN COALESCE($3, personalization_enabled) = TRUE
+            AND policy_acknowledged_at IS NULL
+          THEN NOW()
+          ELSE policy_acknowledged_at
+        END,
+        updated_at = NOW()
+      WHERE organization_id = $1
+        AND user_id = $2
+      RETURNING
+        organization_id,
+        user_id,
+        personalization_enabled,
+        profile_summary,
+        retention_days,
+        policy_acknowledged_at,
+        last_used_at,
+        created_at,
+        updated_at
+    `,
+    [
+      input.organizationId,
+      input.userId,
+      typeof input.personalizationEnabled === "boolean" ? input.personalizationEnabled : null,
+      Object.prototype.hasOwnProperty.call(input, "profileSummary"),
+      input.profileSummary ?? null,
+      retentionDays ?? null
+    ]
+  );
+
+  return mapUserMemoryProfile(rows[0]);
+}
+
+export async function listUserMemoryEntries(input: {
+  organizationId: string;
+  userId: string;
+  limit?: number;
+  includeExpired?: boolean;
+}): Promise<UserMemoryEntryRecord[]> {
+  const rows = await queryOrg<DbUserMemoryEntryRow>(
+    input.organizationId,
+    `
+      SELECT
+        id,
+        organization_id,
+        user_id,
+        memory_key,
+        memory_value,
+        sensitivity,
+        source,
+        expires_at,
+        created_at,
+        updated_at
+      FROM user_memory_entries
+      WHERE organization_id = $1
+        AND user_id = $2
+        AND (
+          $3::boolean
+          OR expires_at IS NULL
+          OR expires_at > NOW()
+        )
+      ORDER BY updated_at DESC
+      LIMIT $4
+    `,
+    [input.organizationId, input.userId, Boolean(input.includeExpired), Math.max(1, input.limit ?? 25)]
+  );
+
+  return rows.map(mapUserMemoryEntry);
+}
+
+export async function upsertUserMemoryEntry(input: {
+  organizationId: string;
+  userId: string;
+  key: string;
+  value: string;
+  sensitivity?: UserMemorySensitivity;
+  source?: UserMemorySource;
+  expiresAt?: string | null;
+  createdBy?: string;
+}): Promise<UserMemoryEntryRecord> {
+  await getOrCreateUserMemoryProfile({
+    organizationId: input.organizationId,
+    userId: input.userId,
+    createdBy: input.createdBy
+  });
+
+  const normalizedKey = normalizeMemoryKey(input.key);
+  const rows = await queryOrg<DbUserMemoryEntryRow>(
+    input.organizationId,
+    `
+      INSERT INTO user_memory_entries (
+        id,
+        organization_id,
+        user_id,
+        memory_key,
+        memory_value,
+        sensitivity,
+        source,
+        expires_at,
+        created_by
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::timestamptz, $9)
+      ON CONFLICT (organization_id, user_id, memory_key)
+      DO UPDATE SET
+        memory_value = EXCLUDED.memory_value,
+        sensitivity = EXCLUDED.sensitivity,
+        source = EXCLUDED.source,
+        expires_at = EXCLUDED.expires_at,
+        updated_at = NOW()
+      RETURNING
+        id,
+        organization_id,
+        user_id,
+        memory_key,
+        memory_value,
+        sensitivity,
+        source,
+        expires_at,
+        created_at,
+        updated_at
+    `,
+    [
+      randomUUID(),
+      input.organizationId,
+      input.userId,
+      normalizedKey,
+      input.value.trim().slice(0, 600),
+      input.sensitivity ?? "low",
+      input.source ?? "manual",
+      input.expiresAt ?? null,
+      input.createdBy ?? input.userId
+    ]
+  );
+
+  return mapUserMemoryEntry(rows[0]);
+}
+
+export async function deleteUserMemoryEntry(input: {
+  organizationId: string;
+  userId: string;
+  key: string;
+}): Promise<boolean> {
+  const rows = await queryOrg<{ id: string }>(
+    input.organizationId,
+    `
+      DELETE FROM user_memory_entries
+      WHERE organization_id = $1
+        AND user_id = $2
+        AND memory_key = $3
+      RETURNING id
+    `,
+    [input.organizationId, input.userId, normalizeMemoryKey(input.key)]
+  );
+
+  return rows.length > 0;
+}
+
+export async function clearUserMemory(input: {
+  organizationId: string;
+  userId: string;
+}): Promise<{ clearedEntries: number; profileReset: boolean }> {
+  return withOrgTransaction(input.organizationId, async (client) => {
+    const deletedEntries = await client.query<{ id: string }>(
+      `
+        DELETE FROM user_memory_entries
+        WHERE organization_id = $1
+          AND user_id = $2
+        RETURNING id
+      `,
+      [input.organizationId, input.userId]
+    );
+
+    const profileReset = await client.query<{ organization_id: string }>(
+      `
+        UPDATE user_memory_profiles
+        SET
+          personalization_enabled = FALSE,
+          profile_summary = NULL,
+          policy_acknowledged_at = NULL,
+          last_used_at = NULL,
+          updated_at = NOW()
+        WHERE organization_id = $1
+          AND user_id = $2
+        RETURNING organization_id
+      `,
+      [input.organizationId, input.userId]
+    );
+
+    return {
+      clearedEntries: deletedEntries.rows.length,
+      profileReset: profileReset.rows.length > 0
+    };
+  });
+}
+
+export async function touchUserMemoryProfileLastUsed(input: {
+  organizationId: string;
+  userId: string;
+  touchedAt?: string;
+}): Promise<void> {
+  await queryOrg(
+    input.organizationId,
+    `
+      UPDATE user_memory_profiles
+      SET
+        last_used_at = $3::timestamptz,
+        updated_at = NOW()
+      WHERE organization_id = $1
+        AND user_id = $2
+        AND personalization_enabled = TRUE
+    `,
+    [input.organizationId, input.userId, input.touchedAt ?? nowIso()]
+  );
+}
+
+export async function getPersonalizationMemoryContext(input: {
+  organizationId: string;
+  userId: string;
+  limit?: number;
+}): Promise<
+  | {
+      enabled: true;
+      profileSummary?: string;
+      entries: Array<{
+        key: string;
+        value: string;
+        sensitivity: UserMemorySensitivity;
+      }>;
+      retentionDays: number;
+    }
+  | {
+      enabled: false;
+      retentionDays: number;
+    }
+> {
+  const profileRows = await queryOrg<DbUserMemoryProfileRow>(
+    input.organizationId,
+    `
+      SELECT
+        organization_id,
+        user_id,
+        personalization_enabled,
+        profile_summary,
+        retention_days,
+        policy_acknowledged_at,
+        last_used_at,
+        created_at,
+        updated_at
+      FROM user_memory_profiles
+      WHERE organization_id = $1
+        AND user_id = $2
+      LIMIT 1
+    `,
+    [input.organizationId, input.userId]
+  );
+
+  if (!profileRows[0]) {
+    return {
+      enabled: false,
+      retentionDays: defaultMemoryRetentionDays()
+    };
+  }
+
+  const profile = mapUserMemoryProfile(profileRows[0]);
+  if (!profile.personalizationEnabled) {
+    return {
+      enabled: false,
+      retentionDays: profile.retentionDays
+    };
+  }
+
+  const entries = await listUserMemoryEntries({
+    organizationId: input.organizationId,
+    userId: input.userId,
+    limit: Math.max(1, Math.min(20, input.limit ?? 6))
+  });
+
+  return {
+    enabled: true,
+    profileSummary: profile.profileSummary,
+    entries: entries.map((entry) => ({
+      key: entry.key,
+      value: entry.value,
+      sensitivity: entry.sensitivity
+    })),
+    retentionDays: profile.retentionDays
+  };
 }
 
 export async function ensureOrganization(input: {

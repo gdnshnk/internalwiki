@@ -11,7 +11,7 @@ export default function ContactPage() {
           Contact
         </p>
         <h1>Talk with our team</h1>
-        <p>Tell us what you want to solve and when you want to launch.</p>
+        <p>Tell us what you want to solve and the answer quality standards you need to enforce.</p>
       </section>
 
       <section className="marketing-split marketing-split--equal">

@@ -1,6 +1,6 @@
 "use client";
 
-import type { AnswerClaim, Citation } from "@internalwiki/core";
+import type { AnswerClaim, AssistantQueryResponse, Citation } from "@internalwiki/core";
 
 export type AssistantStreamMessage = {
   id: string;
@@ -22,6 +22,7 @@ export type AssistantStreamMessage = {
   verificationStatus?: "passed" | "blocked";
   verificationReasons?: string[];
   permissionFilteredOutCount?: number;
+  qualityContract?: AssistantQueryResponse["qualityContract"];
 };
 
 export function MessageStream(props: {
@@ -46,8 +47,15 @@ export function MessageStream(props: {
             <>
               <div className="msg-trust-strip">
                 <span>
-                  Why trust this: {Math.round((message.traceabilityCoverage ?? message.citationCoverage ?? 0) * 100)}%
-                  {" "}claim coverage
+                  Groundedness{" "}
+                  {message.qualityContract?.dimensions.groundedness.status ??
+                    (message.verificationStatus === "blocked" ? "blocked" : "passed")}
+                </span>
+                <span>
+                  Freshness {message.qualityContract?.dimensions.freshness.status ?? "passed"}
+                </span>
+                <span>
+                  Permission safety {message.qualityContract?.dimensions.permissionSafety.status ?? "passed"}
                 </span>
                 <span>Confidence {Math.round((message.confidence ?? 0) * 100)}%</span>
                 <span>Source score {Math.round(message.sourceScore ?? 0)}</span>
@@ -65,6 +73,9 @@ export function MessageStream(props: {
                 ) : null}
                 {typeof message.permissionFilteredOutCount === "number" ? (
                   <span>Permission filtered {message.permissionFilteredOutCount}</span>
+                ) : null}
+                {message.qualityContract?.allowHistoricalEvidence ? (
+                  <span>Historical evidence override on</span>
                 ) : null}
                 {typeof message.missingAuthorCount === "number" ? (
                   <span>Missing author {message.missingAuthorCount}</span>

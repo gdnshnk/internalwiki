@@ -6,8 +6,15 @@ import type {
   Citation,
   ExpandedQuery
 } from "@internalwiki/core";
-import { expandQuery, generateQueryVariations } from "@internalwiki/core";
-import { createAnswerVerificationRun, persistAnswerClaims, persistGroundedAnswer } from "@internalwiki/db";
+import { buildAnswerQualityContract, expandQuery, generateQueryVariations } from "@internalwiki/core";
+import {
+  createAnswerVerificationRun,
+  getPersonalizationMemoryContext,
+  persistAnswerClaims,
+  persistGroundedAnswer,
+  recordUsageMeterEvent,
+  touchUserMemoryProfileLastUsed
+} from "@internalwiki/db";
 import { embedQueryText, getAiProvider } from "@/lib/ai";
 import { buildEvidenceItems, getChunkCandidates } from "@/lib/demo-data";
 
@@ -15,6 +22,7 @@ export const assistantQuerySchema = z.object({
   query: z.string().min(2),
   mode: z.enum(["ask", "summarize", "trace"]).default("ask"),
   threadId: z.string().min(8).optional(),
+  allowHistoricalEvidence: z.boolean().optional(),
   filters: z
     .object({
       sourceType: z
@@ -27,6 +35,9 @@ export const assistantQuerySchema = z.object({
           "microsoft_onedrive"
         ])
         .optional(),
+      tags: z.array(z.string()).optional(),
+      ownerId: z.string().optional(),
+      knowledgeObjectIds: z.array(z.string()).optional(),
       dateRange: z
         .object({
           from: z.string().optional(),
@@ -51,19 +62,22 @@ function fallbackCitationsFromSources(input: {
   return input.sources.slice(0, 2).map((source) => source.citation);
 }
 
-function augmentQuestionForMode(input: AssistantQueryRequest): string {
+function augmentQuestionForMode(input: AssistantQueryRequest, personalizationContext?: string): string {
   const summariesOnlyPolicy =
     "Policy: summaries only. Do not generate action plans, implementation steps, or task lists.";
+  const personalizationGuardrail = personalizationContext
+    ? `Personalization context (use only if directly relevant and never reveal hidden profile details unless user asks):\n${personalizationContext}`
+    : "";
 
   if (input.mode === "summarize") {
-    return `Create a concise executive summary in 4-6 bullets with key points, owners, and risks, all grounded in citations.\n${summariesOnlyPolicy}\nQuestion: ${input.query}`;
+    return `Create a concise executive summary in 4-6 bullets with key points, owners, and risks, all grounded in citations.\n${summariesOnlyPolicy}\n${personalizationGuardrail}\nQuestion: ${input.query}`.trim();
   }
 
   if (input.mode === "trace") {
-    return `Provide an evidence trace summary. Map claims to sources clearly, keep output concise, and avoid prescriptive next steps.\n${summariesOnlyPolicy}\nQuestion: ${input.query}`;
+    return `Provide an evidence trace summary. Map claims to sources clearly, keep output concise, and avoid prescriptive next steps.\n${summariesOnlyPolicy}\n${personalizationGuardrail}\nQuestion: ${input.query}`.trim();
   }
 
-  return `Provide a grounded summary answer followed by 2-4 cited bullets.\n${summariesOnlyPolicy}\nQuestion: ${input.query}`;
+  return `Provide a grounded summary answer followed by 2-4 cited bullets.\n${summariesOnlyPolicy}\n${personalizationGuardrail}\nQuestion: ${input.query}`.trim();
 }
 
 function strictGroundingPrompt(input: string): string {
@@ -249,6 +263,31 @@ function capContextChunks<T extends { text: string }>(chunks: T[], maxTokens = 4
   return selected.length > 0 ? selected : chunks.slice(0, 1);
 }
 
+function toSafeMemoryPrompt(input: {
+  profileSummary?: string;
+  entries: Array<{ key: string; value: string }>;
+}): string | undefined {
+  const lines: string[] = [];
+  if (input.profileSummary && input.profileSummary.trim().length > 0) {
+    lines.push(`User profile: ${input.profileSummary.trim().slice(0, 240)}`);
+  }
+
+  for (const entry of input.entries.slice(0, 6)) {
+    const key = entry.key.trim().replace(/_/g, " ").slice(0, 64);
+    const value = entry.value.trim().slice(0, 180);
+    if (key.length === 0 || value.length === 0) {
+      continue;
+    }
+    lines.push(`${key}: ${value}`);
+  }
+
+  if (lines.length === 0) {
+    return undefined;
+  }
+
+  return lines.join("\n");
+}
+
 export async function runAssistantQuery(params: {
   organizationId: string;
   input: AssistantQueryRequest;
@@ -257,6 +296,27 @@ export async function runAssistantQuery(params: {
 }): Promise<AssistantQueryResponse> {
   const retrievalStart = performance.now();
   const provider = getAiProvider();
+  const personalization =
+    params.actorId !== undefined
+      ? await getPersonalizationMemoryContext({
+          organizationId: params.organizationId,
+          userId: params.actorId,
+          limit: 6
+        })
+      : {
+          enabled: false as const,
+          retentionDays: 90
+        };
+  const personalizationContext =
+    personalization.enabled
+      ? toSafeMemoryPrompt({
+          profileSummary: personalization.profileSummary,
+          entries: personalization.entries.map((entry) => ({
+            key: entry.key,
+            value: entry.value
+          }))
+        })
+      : undefined;
 
   // Expand query for better retrieval
   let expandedQuery: ExpandedQuery;
@@ -283,9 +343,12 @@ export async function runAssistantQuery(params: {
     viewerPrincipalKeys: params.viewerPrincipalKeys,
     queryEmbedding,
     dateRange: params.input.filters?.dateRange,
-    author: params.input.filters?.author,
+    author: params.input.filters?.author ?? params.input.filters?.ownerId,
     minSourceScore: params.input.filters?.minSourceScore,
-    documentIds: params.input.filters?.documentIds
+    documentIds: params.input.filters?.documentIds,
+    tags: params.input.filters?.tags,
+    ownerId: params.input.filters?.ownerId,
+    knowledgeObjectIds: params.input.filters?.knowledgeObjectIds
   });
 
   // If we have variations and not enough candidates, try searching with variations
@@ -301,9 +364,12 @@ export async function runAssistantQuery(params: {
           viewerPrincipalKeys: params.viewerPrincipalKeys,
           queryEmbedding: variationEmbedding,
           dateRange: params.input.filters?.dateRange,
-          author: params.input.filters?.author,
+          author: params.input.filters?.author ?? params.input.filters?.ownerId,
           minSourceScore: params.input.filters?.minSourceScore,
-          documentIds: params.input.filters?.documentIds
+          documentIds: params.input.filters?.documentIds,
+          tags: params.input.filters?.tags,
+          ownerId: params.input.filters?.ownerId,
+          knowledgeObjectIds: params.input.filters?.knowledgeObjectIds
         });
       })
     );
@@ -324,106 +390,151 @@ export async function runAssistantQuery(params: {
   }
 
   const sources = buildEvidenceItems(allCandidates);
+  const uniqueSourceCount = new Set(
+    allCandidates.map((candidate) => candidate.documentId ?? candidate.sourceUrl ?? candidate.chunkId)
+  ).size;
+  const hasMinimumEvidence = allCandidates.length >= 3 && uniqueSourceCount >= 2;
   const retrievalScore = computeRetrievalScore(sources);
   const retrievalMs = Math.round(performance.now() - retrievalStart);
 
-  const generationStart = performance.now();
-  const preparedQuestion = augmentQuestionForMode(params.input);
-  const contextChunks = capContextChunks(
-    allCandidates.map((chunk) => ({
-      chunkId: chunk.chunkId,
-      docVersionId: chunk.docVersionId,
-      sourceUrl: chunk.sourceUrl,
-      text: chunk.text,
-      sourceScore: chunk.sourceScore
-    }))
-  );
-
-  let grounded = await provider.answerQuestion({
-    question: preparedQuestion,
-    contextChunks
-  });
-  let citations = fallbackCitationsFromSources({ existing: grounded.citations, sources });
-
   const chunkTextById = new Map<string, string>();
   const chunkSourceScore = new Map<string, number>();
+  const citationUpdatedAtByChunkId = new Map<string, string | undefined>();
   for (const chunk of allCandidates) {
     chunkTextById.set(chunk.chunkId, chunk.text);
     chunkSourceScore.set(chunk.chunkId, chunk.sourceScore);
+    citationUpdatedAtByChunkId.set(chunk.chunkId, chunk.updatedAt);
   }
 
-  let grounding = assessGrounding({
-    answer: grounded.answer,
-    citations,
-    chunkTextById
-  });
+  let generatedAnswerText = "insufficient evidence";
+  let generatedConfidence = 0;
+  let generatedSourceScore = 0;
+  let citations: Citation[] = [];
+  let grounding = { citationCoverage: 0, unsupportedClaimCount: 0 };
+  let claims: AnswerClaim[] = [];
+  let generationMs = 0;
 
-  if (grounding.citationCoverage < 0.8) {
-    const retry = await provider.answerQuestion({
-      question: strictGroundingPrompt(preparedQuestion),
+  if (hasMinimumEvidence) {
+    const generationStart = performance.now();
+    const preparedQuestion = augmentQuestionForMode(params.input, personalizationContext);
+    const contextChunks = capContextChunks(
+      allCandidates.map((chunk) => ({
+        chunkId: chunk.chunkId,
+        docVersionId: chunk.docVersionId,
+        sourceUrl: chunk.sourceUrl,
+        text: chunk.text,
+        sourceScore: chunk.sourceScore
+      }))
+    );
+
+    let grounded = await provider.answerQuestion({
+      question: preparedQuestion,
       contextChunks
     });
-    const retryCitations = fallbackCitationsFromSources({ existing: retry.citations, sources });
-    const retryGrounding = assessGrounding({
-      answer: retry.answer,
-      citations: retryCitations,
+    citations = fallbackCitationsFromSources({ existing: grounded.citations, sources });
+    grounding = assessGrounding({
+      answer: grounded.answer,
+      citations,
       chunkTextById
     });
 
-    if (retryGrounding.citationCoverage >= grounding.citationCoverage) {
-      grounded = retry;
-      citations = retryCitations;
-      grounding = retryGrounding;
+    if (grounding.citationCoverage < 0.8) {
+      const retry = await provider.answerQuestion({
+        question: strictGroundingPrompt(preparedQuestion),
+        contextChunks
+      });
+      const retryCitations = fallbackCitationsFromSources({ existing: retry.citations, sources });
+      const retryGrounding = assessGrounding({
+        answer: retry.answer,
+        citations: retryCitations,
+        chunkTextById
+      });
+
+      if (retryGrounding.citationCoverage >= grounding.citationCoverage) {
+        grounded = retry;
+        citations = retryCitations;
+        grounding = retryGrounding;
+      }
     }
+
+    generationMs = Math.round(performance.now() - generationStart);
+    generatedAnswerText = grounded.answer;
+    generatedConfidence = grounded.confidence;
+    generatedSourceScore = grounded.sourceScore;
+    claims = buildClaims({
+      answer: grounded.answer,
+      citations,
+      chunkTextById
+    });
   }
 
-  const generationMs = Math.round(performance.now() - generationStart);
-  const claims = buildClaims({
-    answer: grounded.answer,
+  const minimumCitedChunksMet = citations.length >= 3;
+  const shouldForceInsufficientEvidence = !hasMinimumEvidence || !minimumCitedChunksMet;
+  if (shouldForceInsufficientEvidence) {
+    generatedAnswerText = "insufficient evidence";
+    generatedConfidence = 0;
+    generatedSourceScore = 0;
+    citations = [];
+    grounding = {
+      citationCoverage: 0,
+      unsupportedClaimCount: 0
+    };
+    claims = [];
+  }
+
+  const qualityContract = buildAnswerQualityContract({
     citations,
-    chunkTextById
+    citationCoverage: grounding.citationCoverage,
+    unsupportedClaims: grounding.unsupportedClaimCount,
+    citationUpdatedAtByChunkId,
+    candidateCount: allCandidates.length,
+    hasViewerPrincipalKeys: Boolean(params.viewerPrincipalKeys?.length),
+    allowHistoricalEvidence: params.input.allowHistoricalEvidence
   });
+  const verificationReasons = Array.from(
+    new Set([
+      ...qualityContract.dimensions.groundedness.reasons,
+      ...qualityContract.dimensions.freshness.reasons,
+      ...qualityContract.dimensions.permissionSafety.reasons
+    ])
+  );
+  const verificationStatus: "passed" | "blocked" =
+    qualityContract.status === "blocked" || shouldForceInsufficientEvidence ? "blocked" : "passed";
+  if (verificationStatus === "blocked") {
+    generatedAnswerText = "insufficient evidence";
+    citations = [];
+    claims = [];
+    generatedConfidence = 0;
+    generatedSourceScore = 0;
+    grounding = {
+      citationCoverage: 0,
+      unsupportedClaimCount: 0
+    };
+  }
+
+  const citationTrust = averageCitationTrust(citations, chunkSourceScore);
+  const confidence =
+    verificationStatus === "blocked"
+      ? 0
+      : computeAnswerConfidence({
+          modelConfidence: generatedConfidence,
+          retrievalScore,
+          citationCoverage: grounding.citationCoverage,
+          citationTrust
+        });
+  const sourceScore =
+    verificationStatus === "blocked"
+      ? 0
+      : citations.reduce((acc, citation) => acc + (chunkSourceScore.get(citation.chunkId) ?? 0), 0) /
+          citations.length || generatedSourceScore;
   const traceability = computeTraceability({
     claims,
     sources,
     citationCoverage: grounding.citationCoverage
   });
 
-  const verificationReasons: string[] = [];
-  if (citations.length === 0) {
-    verificationReasons.push("No citations produced by retrieval context.");
-  }
-  if (grounding.citationCoverage < 0.8) {
-    verificationReasons.push(
-      `Citation coverage ${grounding.citationCoverage.toFixed(2)} is below required threshold 0.80.`
-    );
-  }
-  if (grounding.unsupportedClaimCount > 0) {
-    verificationReasons.push(`${grounding.unsupportedClaimCount} claim(s) were not fully supported by cited evidence.`);
-  }
-
-  const verificationStatus: "passed" | "blocked" =
-    verificationReasons.length === 0 ? "passed" : "blocked";
-  if (verificationStatus === "blocked") {
-    grounded = {
-      ...grounded,
-      answer:
-        "Answer blocked by verification safeguards. Sync more sources or broaden your filters to reach required citation support."
-    };
-  }
-
-  const citationTrust = averageCitationTrust(citations, chunkSourceScore);
-  const confidence = computeAnswerConfidence({
-    modelConfidence: grounded.confidence,
-    retrievalScore,
-    citationCoverage: grounding.citationCoverage,
-    citationTrust
-  });
-  const sourceScore =
-    citations.reduce((acc, citation) => acc + (chunkSourceScore.get(citation.chunkId) ?? 0), 0) / citations.length || grounded.sourceScore;
-
   const response: AssistantQueryResponse = {
-    answer: grounded.answer,
+    answer: generatedAnswerText,
     confidence,
     sourceScore,
     citations,
@@ -449,6 +560,7 @@ export async function runAssistantQuery(params: {
       filteredOutCount: 0,
       aclMode: "enforced"
     },
+    qualityContract,
     mode: params.input.mode,
     model: provider.name
   };
@@ -482,8 +594,27 @@ export async function runAssistantQuery(params: {
     citationCoverage: response.verification.citationCoverage,
     unsupportedClaims: response.verification.unsupportedClaims,
     permissionFilteredOutCount: response.permissions.filteredOutCount,
+    qualityContract: response.qualityContract,
     createdBy: params.actorId
   });
+  await recordUsageMeterEvent({
+    orgId: params.organizationId,
+    type: response.verification.status === "passed" ? "summary_delivered" : "summary_blocked",
+    credits: response.verification.status === "passed" ? 1 : 0,
+    createdBy: params.actorId,
+    metadata: {
+      mode: params.input.mode,
+      threadId: response.threadId ?? null,
+      messageId: response.messageId ?? null,
+      verificationStatus: response.verification.status
+    }
+  }).catch(() => undefined);
+  if (params.actorId && personalization.enabled) {
+    await touchUserMemoryProfileLastUsed({
+      organizationId: params.organizationId,
+      userId: params.actorId
+    }).catch(() => undefined);
+  }
 
   return response;
 }

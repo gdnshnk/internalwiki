@@ -19,7 +19,6 @@ export async function privacyRetentionCleanup(
   });
 
   helpers.logger.info(
-    `privacyRetentionCleanup jobId=${helpers.job.id} retentionDays=${retentionDays} feedback=${result.assistantFeedbackDeleted} chatMessages=${result.chatMessagesDeleted} chatThreads=${result.chatThreadsDeleted} privacyRequests=${result.privacyRequestsDeleted}`
+    `privacyRetentionCleanup jobId=${helpers.job.id} retentionDays=${retentionDays} feedback=${result.assistantFeedbackDeleted} chatMessages=${result.chatMessagesDeleted} chatThreads=${result.chatThreadsDeleted} privacyRequests=${result.privacyRequestsDeleted} memoryEntries=${result.memoryEntriesDeleted}`
   );
 }
-

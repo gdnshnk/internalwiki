@@ -100,6 +100,7 @@ export function AssistantWorkspace(props: {
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<AssistantMode>(props.defaultMode ?? "ask");
   const [sourceFilter, setSourceFilter] = useState<SourceFilterValue>("all");
+  const [allowHistoricalEvidence, setAllowHistoricalEvidence] = useState(false);
   const [messages, setMessages] = useState<AssistantStreamMessage[]>(props.initialMessages ?? []);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(props.initialThreadId ?? null);
   const [sources, setSources] = useState<AssistantQueryResponse["sources"]>([]);
@@ -171,6 +172,7 @@ export function AssistantWorkspace(props: {
         body: JSON.stringify({
           query: nextQuery,
           mode,
+          allowHistoricalEvidence,
           threadId: activeThreadId ?? undefined,
           filters: sourceFilter === "all" ? undefined : { sourceType: sourceFilter }
         })
@@ -244,7 +246,8 @@ export function AssistantWorkspace(props: {
                     missingDateCount: event.payload.traceability.missingDateCount,
                     verificationStatus: event.payload.verification.status,
                     verificationReasons: event.payload.verification.reasons,
-                    permissionFilteredOutCount: event.payload.permissions.filteredOutCount
+                    permissionFilteredOutCount: event.payload.permissions.filteredOutCount,
+                    qualityContract: event.payload.qualityContract
                   }
                 : message
             )
@@ -314,10 +317,12 @@ export function AssistantWorkspace(props: {
               value={query}
               mode={mode}
               sourceFilter={sourceFilter}
+              allowHistoricalEvidence={allowHistoricalEvidence}
               loading={loading}
               onValueChange={setQuery}
               onModeChange={setMode}
               onSourceFilterChange={setSourceFilter}
+              onAllowHistoricalEvidenceChange={setAllowHistoricalEvidence}
               onSubmit={() => void submitQuery()}
               placeholder={activeModeCopy.launchPlaceholder}
             />
@@ -343,11 +348,13 @@ export function AssistantWorkspace(props: {
               value={query}
               mode={mode}
               sourceFilter={sourceFilter}
+              allowHistoricalEvidence={allowHistoricalEvidence}
               loading={loading}
               sticky
               onValueChange={setQuery}
               onModeChange={setMode}
               onSourceFilterChange={setSourceFilter}
+              onAllowHistoricalEvidenceChange={setAllowHistoricalEvidence}
               onSubmit={() => void submitQuery()}
               placeholder={activeModeCopy.threadPlaceholder}
             />

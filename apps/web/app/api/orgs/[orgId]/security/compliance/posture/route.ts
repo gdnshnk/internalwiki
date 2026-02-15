@@ -9,6 +9,7 @@ import { assertScopedOrgAccess } from "@/lib/organization";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { resolveRequestId, withRequestId } from "@/lib/request-id";
 import { getComplianceMode } from "@/lib/security";
+import { requireBusinessFeature } from "@/lib/billing";
 
 export async function GET(
   request: Request,
@@ -26,6 +27,15 @@ export async function GET(
     assertScopedOrgAccess({ session, targetOrgId: orgId, minimumRole: "admin" });
   } catch (error) {
     return jsonError((error as Error).message, 403, withRequestId(requestId));
+  }
+
+  const featureError = await requireBusinessFeature({
+    organizationId: orgId,
+    feature: "compliancePosture",
+    requestId
+  });
+  if (featureError) {
+    return featureError;
   }
 
   const rate = await checkRateLimit({
@@ -59,6 +69,11 @@ export async function GET(
           pendingPrivacyRequests: posture.pendingPrivacyRequests,
           completedPrivacyRequestsLast30d: posture.completedPrivacyRequestsLast30d
         },
+        personalizationMemory: {
+          enabledProfiles: posture.memoryProfilesEnabled,
+          entriesStored: posture.memoryEntries,
+          explicitOptInRequired: true
+        },
         auditTrail: {
           hashChainValid: integrity.valid,
           eventsChecked: integrity.checked,
@@ -69,4 +84,3 @@ export async function GET(
     withRequestId(requestId)
   );
 }
-

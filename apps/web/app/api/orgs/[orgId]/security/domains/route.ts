@@ -8,6 +8,7 @@ import { checkRateLimit } from "@/lib/rate-limit";
 import { resolveRequestId, withRequestId } from "@/lib/request-id";
 import { enforceMutationSecurity } from "@/lib/security";
 import { beginIdempotentMutation, finalizeIdempotentMutation } from "@/lib/idempotency";
+import { requireBusinessFeature } from "@/lib/billing";
 
 const createDomainSchema = z.object({
   domain: z.string().min(3),
@@ -30,6 +31,15 @@ export async function GET(
     assertScopedOrgAccess({ session, targetOrgId: orgId, minimumRole: "admin" });
   } catch (error) {
     return jsonError((error as Error).message, 403, withRequestId(requestId));
+  }
+
+  const featureError = await requireBusinessFeature({
+    organizationId: orgId,
+    feature: "domainInviteControls",
+    requestId
+  });
+  if (featureError) {
+    return featureError;
   }
 
   const rate = await checkRateLimit({
@@ -70,6 +80,15 @@ export async function POST(
     assertScopedOrgAccess({ session, targetOrgId: orgId, minimumRole: "admin" });
   } catch (error) {
     return jsonError((error as Error).message, 403, withRequestId(requestId));
+  }
+
+  const featureError = await requireBusinessFeature({
+    organizationId: orgId,
+    feature: "domainInviteControls",
+    requestId
+  });
+  if (featureError) {
+    return featureError;
   }
 
   const parsed = createDomainSchema.safeParse(await request.json().catch(() => ({})));

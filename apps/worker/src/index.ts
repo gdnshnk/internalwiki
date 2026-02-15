@@ -8,6 +8,11 @@ import { auditExportGenerate } from "./tasks/auditExportGenerate";
 import { incidentRollup } from "./tasks/incidentRollup";
 import { retryStuckSync } from "./tasks/retryStuckSync";
 import { privacyRetentionCleanup } from "./tasks/privacyRetentionCleanup";
+import { qualityEvalLoop } from "./tasks/qualityEvalLoop";
+import { freshnessReviewScan } from "./tasks/freshnessReviewScan";
+import { dependencyImpactScan } from "./tasks/dependencyImpactScan";
+import { canonicalQuestionRollup } from "./tasks/canonicalQuestionRollup";
+import { lowConfidenceReviewQueue } from "./tasks/lowConfidenceReviewQueue";
 
 const taskList: TaskList = {
   "schedule-connector-syncs": async (payload, helpers) => {
@@ -36,6 +41,21 @@ const taskList: TaskList = {
   },
   "privacy-retention-cleanup": async (payload, helpers) => {
     await privacyRetentionCleanup(payload as Record<string, never>, helpers);
+  },
+  "quality-eval-loop": async (payload, helpers) => {
+    await qualityEvalLoop(payload as never, helpers);
+  },
+  "freshness-review-scan": async (payload, helpers) => {
+    await freshnessReviewScan(payload as Record<string, never>, helpers);
+  },
+  "dependency-impact-scan": async (payload, helpers) => {
+    await dependencyImpactScan(payload as Record<string, never>, helpers);
+  },
+  "canonical-question-rollup": async (payload, helpers) => {
+    await canonicalQuestionRollup(payload as Record<string, never>, helpers);
+  },
+  "low-confidence-review-queue": async (payload, helpers) => {
+    await lowConfidenceReviewQueue(payload as Record<string, never>, helpers);
   }
 };
 
@@ -54,7 +74,12 @@ async function main(): Promise<void> {
 */15 * * * * schedule-connector-syncs {}
 */30 * * * * incident-rollup {}
 */10 * * * * retry-stuck-sync {}
+*/15 * * * * quality-eval-loop {}
+*/15 * * * * freshness-review-scan {}
+*/15 * * * * dependency-impact-scan {}
+*/30 * * * * low-confidence-review-queue {}
 0 * * * * maintenance-auth-cleanup {}
+0 2 * * * canonical-question-rollup {}
 0 1 * * * privacy-retention-cleanup {}
 `
   });

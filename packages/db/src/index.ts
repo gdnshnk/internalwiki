@@ -1,6 +1,7 @@
 export * from "./client";
 export * from "./types";
 export * from "./repositories";
+export * from "./repositories-knowledge";
 export {
   getDocumentById as getDocumentByIdCached,
   getLatestDocumentVersionMetadata as getLatestDocumentVersionMetadataCached,

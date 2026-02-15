@@ -9,6 +9,7 @@ import { requireSessionContext } from "@/lib/api-auth";
 import { assertScopedOrgAccess } from "@/lib/organization";
 import { checkRateLimit } from "@/lib/rate-limit";
 import { resolveRequestId, withRequestId } from "@/lib/request-id";
+import { requireBusinessFeature } from "@/lib/billing";
 
 export async function GET(
   request: Request,
@@ -27,6 +28,15 @@ export async function GET(
     assertScopedOrgAccess({ session, targetOrgId: orgId, minimumRole: "admin" });
   } catch (error) {
     return jsonError((error as Error).message, 403, withRequestId(requestId));
+  }
+
+  const featureError = await requireBusinessFeature({
+    organizationId: orgId,
+    feature: "advancedPermissionsDiagnostics",
+    requestId
+  });
+  if (featureError) {
+    return featureError;
   }
 
   const rate = await checkRateLimit({

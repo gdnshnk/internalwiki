@@ -1,10 +1,10 @@
 import type { Citation, DocumentChunk, DocumentRecord, EvidenceItem, EvidenceReason } from "@internalwiki/core";
-import { computeSourceScore } from "@internalwiki/core";
 import type { ConnectorType } from "@internalwiki/core";
 import {
   getDocumentByIdCached,
   hashEmbedding,
   listDocumentsCached,
+  searchKnowledgeObjectChunksHybrid,
   searchDocumentChunksHybridCached,
   toDocumentChunk,
   vectorToSqlLiteral
@@ -28,53 +28,65 @@ export async function getChunkCandidates(params: {
   author?: string;
   minSourceScore?: number;
   documentIds?: string[];
+  tags?: string[];
+  ownerId?: string;
+  knowledgeObjectIds?: string[];
 }): Promise<DocumentChunk[]> {
   const embedding = params.queryEmbedding ?? hashEmbedding(params.question);
   const queryVector = vectorToSqlLiteral(embedding);
 
-  const records = await searchDocumentChunksHybridCached({
-    organizationId: params.organizationId,
-    queryText: params.question,
-    queryVector,
-    sourceType: params.sourceType,
-    viewerPrincipalKeys: params.viewerPrincipalKeys,
-    limit: 8,
-    dateRange: params.dateRange,
-    author: params.author,
-    minSourceScore: params.minSourceScore,
-    documentIds: params.documentIds
-  });
+  const [documentRecords, knowledgeRecords] = await Promise.all([
+    searchDocumentChunksHybridCached({
+      organizationId: params.organizationId,
+      queryText: params.question,
+      queryVector,
+      sourceType: params.sourceType,
+      viewerPrincipalKeys: params.viewerPrincipalKeys,
+      limit: 8,
+      dateRange: params.dateRange,
+      author: params.author,
+      minSourceScore: params.minSourceScore,
+      documentIds: params.documentIds
+    }),
+    searchKnowledgeObjectChunksHybrid({
+      organizationId: params.organizationId,
+      queryText: params.question,
+      queryVector,
+      viewerPrincipalKeys: params.viewerPrincipalKeys,
+      ownerUserId: params.ownerId,
+      tags: params.tags,
+      knowledgeObjectIds: params.knowledgeObjectIds,
+      limit: 8
+    })
+  ]);
 
-  const chunks = toDocumentChunk(records);
+  const documentChunks = toDocumentChunk(documentRecords);
+  const knowledgeChunks: DocumentChunk[] = knowledgeRecords.map((record) => ({
+    chunkId: record.chunkId,
+    docVersionId: record.knowledgeObjectVersionId,
+    text: record.text,
+    rank: record.combinedScore,
+    sourceUrl: record.sourceUrl,
+    sourceScore: record.sourceScore,
+    documentId: record.knowledgeObjectId,
+    documentTitle: record.knowledgeObjectTitle,
+    connectorType: "google_docs",
+    updatedAt: record.updatedAt,
+    author: record.ownerUserId,
+    sourceFormat: "knowledge_object",
+    sourceExternalId: record.knowledgeObjectId,
+    canonicalSourceUrl: record.sourceUrl
+  }));
+
+  const chunks = [...documentChunks, ...knowledgeChunks]
+    .sort((a, b) => (b.rank ?? 0) - (a.rank ?? 0))
+    .slice(0, 8);
   if (chunks.length > 0) {
     return chunks;
   }
 
-  // Fallback to summaries when there are no indexed chunks yet.
-  const docs = await listDocuments(params.organizationId);
-  return docs.slice(0, 4).map((doc, idx) => ({
-    chunkId: `${doc.id}-summary`,
-    docVersionId: `${doc.id}-latest`,
-    text: doc.summary ?? `${doc.title} has no generated summary yet.`,
-    rank: idx,
-    sourceUrl: doc.sourceUrl,
-    sourceScore:
-      doc.sourceScore?.total ??
-      computeSourceScore({
-        updatedAt: doc.updatedAt,
-        sourceAuthority: 0.9,
-        authorAuthority: 0.75,
-        citationCoverage: 0.7
-      }).total,
-    documentId: doc.id,
-    documentTitle: doc.title,
-    connectorType: doc.sourceType,
-    updatedAt: doc.updatedAt,
-    author: doc.owner,
-    sourceFormat: doc.sourceFormat,
-    sourceExternalId: doc.sourceExternalId,
-    canonicalSourceUrl: doc.canonicalSourceUrl
-  }));
+  // Fail closed: no candidate evidence means no answer should be generated.
+  return [];
 }
 
 export function mapChunkToCitation(chunk: DocumentChunk): Citation {

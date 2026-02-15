@@ -1,4 +1,11 @@
-import { getOrCreateSessionPolicy, listAuditExportJobs, verifyAuditEventIntegrity } from "@internalwiki/db";
+import {
+  getAnswerQualityContractSummary,
+  getOrCreateUserMemoryProfile,
+  getOrCreateSessionPolicy,
+  listUserMemoryEntries,
+  listAuditExportJobs,
+  verifyAuditEventIntegrity
+} from "@internalwiki/db";
 import { SecuritySettingsManager } from "@/components/security-settings-manager";
 import { assertScopedOrgAccess } from "@/lib/organization";
 import { getSessionContextOptional } from "@/lib/session";
@@ -19,10 +26,21 @@ export default async function SecuritySettingsPage() {
     redirect("/app");
   }
 
-  const [policy, jobs, integrity] = await Promise.all([
+  const [policy, jobs, integrity, contract, memoryProfile, memoryEntries] = await Promise.all([
     getOrCreateSessionPolicy(session.organizationId),
     listAuditExportJobs(session.organizationId, 20),
-    verifyAuditEventIntegrity({ organizationId: session.organizationId, limit: 500 })
+    verifyAuditEventIntegrity({ organizationId: session.organizationId, limit: 500 }),
+    getAnswerQualityContractSummary(session.organizationId),
+    getOrCreateUserMemoryProfile({
+      organizationId: session.organizationId,
+      userId: session.userId,
+      createdBy: session.userId
+    }),
+    listUserMemoryEntries({
+      organizationId: session.organizationId,
+      userId: session.userId,
+      limit: 25
+    })
   ]);
 
   return (
@@ -35,7 +53,15 @@ export default async function SecuritySettingsPage() {
         </p>
       </section>
 
-      <SecuritySettingsManager orgId={session.organizationId} initialPolicy={policy} initialJobs={jobs} initialIntegrity={integrity} />
+      <SecuritySettingsManager
+        orgId={session.organizationId}
+        initialPolicy={policy}
+        initialJobs={jobs}
+        initialIntegrity={integrity}
+        initialContract={contract}
+        initialMemoryProfile={memoryProfile}
+        initialMemoryEntries={memoryEntries}
+      />
     </main>
   );
 }

@@ -6,12 +6,15 @@ import type {
   ConnectorType,
   IncidentSummary,
   OrganizationDomain,
+  PlanTier,
   OrgRole,
   RegistrationInvite,
   ReviewAction,
   SessionPolicy,
   SloSummary,
-  SourceScore
+  SourceScore,
+  UserMemoryEntry,
+  UserMemoryProfile
 } from "@internalwiki/core";
 
 export type ConnectorAccount = {
@@ -214,6 +217,8 @@ export type RecentDeadLetterStats = {
 };
 
 export type SessionPolicyRecord = SessionPolicy;
+export type UserMemoryProfileRecord = UserMemoryProfile;
+export type UserMemoryEntryRecord = UserMemoryEntry;
 
 export type AuditExportJobRecord = AuditExportJob;
 
@@ -234,4 +239,14 @@ export type PrivacyRequestRecord = {
   createdAt: string;
   updatedAt: string;
   processedAt?: string;
+};
+
+export type OrganizationBillingSettingsRecord = {
+  id: string;
+  organizationId: string;
+  planTier: PlanTier;
+  overageEnabled: boolean;
+  hardCapCredits?: number;
+  createdAt: string;
+  updatedAt: string;
 };

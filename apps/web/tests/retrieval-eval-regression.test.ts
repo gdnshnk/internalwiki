@@ -78,6 +78,59 @@ function buildMockResponse(input: {
       filteredOutCount: 0,
       aclMode: "enforced"
     },
+    qualityContract: {
+      version: "v1",
+      status: input.good ? "passed" : "blocked",
+      policy: {
+        groundedness: {
+          requireCitations: true,
+          minCitationCoverage: 0.8,
+          maxUnsupportedClaims: 0
+        },
+        freshness: {
+          windowDays: 30,
+          minFreshCitationCoverage: 0.8
+        },
+        permissionSafety: {
+          mode: "fail_closed"
+        }
+      },
+      allowHistoricalEvidence: false,
+      dimensions: {
+        groundedness: {
+          status: input.good ? "passed" : "blocked",
+          reasons: input.good ? [] : ["Insufficient citation support"],
+          reasonCodes: input.good ? [] : ["groundedness.low_citation_coverage"],
+          metrics: {
+            citationCount: 1,
+            citationCoverage: input.good ? 0.9 : 0.45,
+            unsupportedClaims: input.good ? 0 : 2
+          }
+        },
+        freshness: {
+          status: "passed",
+          reasons: [],
+          reasonCodes: [],
+          metrics: {
+            freshnessWindowDays: 30,
+            citationCount: 1,
+            freshCitationCount: 1,
+            staleCitationCount: 0,
+            citationFreshnessCoverage: 1
+          }
+        },
+        permissionSafety: {
+          status: "passed",
+          reasons: [],
+          reasonCodes: [],
+          metrics: {
+            candidateCount: 1,
+            citationCount: 1,
+            hasViewerPrincipalKeys: true
+          }
+        }
+      }
+    },
     mode: input.mode,
     model: "eval-harness"
   };

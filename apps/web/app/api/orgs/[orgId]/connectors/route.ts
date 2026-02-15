@@ -10,6 +10,7 @@ import { resolveRequestId, withRequestId } from "@/lib/request-id";
 import { enforceMutationSecurity } from "@/lib/security";
 import { enqueueSyncConnectorJob } from "@/lib/worker-jobs";
 import { beginIdempotentMutation, finalizeIdempotentMutation } from "@/lib/idempotency";
+import { getOrgEntitlements } from "@/lib/billing";
 import { createConnectorAccount, listConnectorAccounts, upsertUserSourceIdentity } from "@internalwiki/db";
 import { randomUUID } from "node:crypto";
 
@@ -96,6 +97,29 @@ export async function POST(
     );
   }
 
+  const [entitlements, existingConnectors] = await Promise.all([
+    getOrgEntitlements(orgId),
+    listConnectorAccounts(orgId)
+  ]);
+  const connectorLimit = entitlements.limits.connectorLimit;
+  if (connectorLimit !== null && existingConnectors.length >= connectorLimit) {
+    await finalizeIdempotentMutation({
+      keyHash: idempotency.keyHash,
+      organizationId: orgId,
+      method: idempotency.method,
+      path: idempotency.path,
+      status: 402,
+      responseBody: {
+        error: `Connector limit reached for ${entitlements.planTier} plan. Upgrade to add more integrations.`
+      }
+    });
+    return jsonError(
+      `Connector limit reached for ${entitlements.planTier} plan. Upgrade to add more integrations.`,
+      402,
+      withRequestId(requestId)
+    );
+  }
+
   const connector = await createConnectorAccount({
     id: randomUUID(),
     organizationId: orgId,
@@ -166,7 +190,7 @@ export async function POST(
     connector: toPublicConnector(connector),
     syncQueued: Boolean(queuedSync),
     queueJobId: queuedSync?.jobId ?? null,
-    allConnectors: (await listConnectorAccounts(orgId)).map(toPublicConnector)
+    allConnectors: [...existingConnectors, connector].map(toPublicConnector)
   };
   await finalizeIdempotentMutation({
     keyHash: idempotency.keyHash,

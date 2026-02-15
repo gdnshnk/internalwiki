@@ -14,12 +14,14 @@ export function AskComposer(props: {
   value: string;
   mode: AssistantMode;
   sourceFilter: SourceFilterValue;
+  allowHistoricalEvidence: boolean;
   loading: boolean;
   sticky?: boolean;
   placeholder?: string;
   onValueChange: (value: string) => void;
   onModeChange: (mode: AssistantMode) => void;
   onSourceFilterChange: (value: SourceFilterValue) => void;
+  onAllowHistoricalEvidenceChange: (value: boolean) => void;
   onSubmit: () => void;
 }) {
   const lineCount = useMemo(() => Math.max(1, Math.min(6, props.value.split("\n").length)), [props.value]);
@@ -63,7 +65,17 @@ export function AskComposer(props: {
       />
 
       <div className="ask-shell__footer">
-        <SourceFilterChips value={props.sourceFilter} onChange={props.onSourceFilterChange} />
+        <div className="ask-shell__controls">
+          <SourceFilterChips value={props.sourceFilter} onChange={props.onSourceFilterChange} />
+          <label className="ask-toggle">
+            <input
+              type="checkbox"
+              checked={props.allowHistoricalEvidence}
+              onChange={(event) => props.onAllowHistoricalEvidenceChange(event.target.checked)}
+            />
+            <span>Include older sources</span>
+          </label>
+        </div>
         <button
           type="button"
           className="ask-submit"

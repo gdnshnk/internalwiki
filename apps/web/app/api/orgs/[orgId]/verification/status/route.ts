@@ -1,4 +1,4 @@
-import { getLatestVerificationStatus } from "@internalwiki/db";
+import { getAnswerQualityContractSummary, getLatestVerificationStatus } from "@internalwiki/db";
 import { jsonError, jsonOk, rateLimitError } from "@/lib/api";
 import { requireSessionContext } from "@/lib/api-auth";
 import { assertScopedOrgAccess } from "@/lib/organization";
@@ -33,14 +33,23 @@ export async function GET(
     return rateLimitError({ retryAfterMs: rate.retryAfterMs, requestId });
   }
 
-  const status = await getLatestVerificationStatus(orgId);
+  const [status, contract] = await Promise.all([
+    getLatestVerificationStatus(orgId),
+    getAnswerQualityContractSummary(orgId)
+  ]);
   return jsonOk(
     {
       threshold: {
-        citationCoverage: 0.8,
-        unsupportedClaims: 0
+        citationCoverage: contract.policy.groundedness.minCitationCoverage,
+        unsupportedClaims: contract.policy.groundedness.maxUnsupportedClaims
       },
-      ...status
+      ...status,
+      qualityContract: {
+        version: contract.version,
+        policy: contract.policy,
+        rolling7d: contract.rolling7d,
+        latest: contract.latest
+      }
     },
     withRequestId(requestId)
   );

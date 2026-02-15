@@ -14,7 +14,11 @@ const {
   listStuckSyncRunsMock,
   getAuditExportJobMock,
   listAuditEventsForExportMock,
-  updateAuditExportJobStatusMock
+  updateAuditExportJobStatusMock,
+  getAnswerVerificationWindowStatsMock,
+  listRecentAnswerVerificationRunsMock,
+  recordEvalRunMock,
+  recordEvalCasesMock
 } = vi.hoisted(() => ({
   appendAuditEventMock: vi.fn(),
   markConnectorReauthRequiredMock: vi.fn(),
@@ -28,7 +32,11 @@ const {
   listStuckSyncRunsMock: vi.fn(),
   getAuditExportJobMock: vi.fn(),
   listAuditEventsForExportMock: vi.fn(),
-  updateAuditExportJobStatusMock: vi.fn()
+  updateAuditExportJobStatusMock: vi.fn(),
+  getAnswerVerificationWindowStatsMock: vi.fn(),
+  listRecentAnswerVerificationRunsMock: vi.fn(),
+  recordEvalRunMock: vi.fn(),
+  recordEvalCasesMock: vi.fn()
 }));
 
 vi.mock("@internalwiki/db", () => ({
@@ -48,7 +56,11 @@ vi.mock("@internalwiki/db", () => ({
   listStuckSyncRuns: listStuckSyncRunsMock,
   getAuditExportJob: getAuditExportJobMock,
   listAuditEventsForExport: listAuditEventsForExportMock,
-  updateAuditExportJobStatus: updateAuditExportJobStatusMock
+  updateAuditExportJobStatus: updateAuditExportJobStatusMock,
+  getAnswerVerificationWindowStats: getAnswerVerificationWindowStatsMock,
+  listRecentAnswerVerificationRuns: listRecentAnswerVerificationRunsMock,
+  recordEvalRun: recordEvalRunMock,
+  recordEvalCases: recordEvalCasesMock
 }));
 
 vi.mock("@internalwiki/connectors", async () => {
@@ -65,6 +77,7 @@ import { syncDeadLetter } from "../src/tasks/syncDeadLetter";
 import { incidentRollup } from "../src/tasks/incidentRollup";
 import { retryStuckSync } from "../src/tasks/retryStuckSync";
 import { auditExportGenerate } from "../src/tasks/auditExportGenerate";
+import { qualityEvalLoop } from "../src/tasks/qualityEvalLoop";
 
 describe("worker reliability tasks", () => {
   beforeEach(() => {
@@ -213,6 +226,60 @@ describe("worker reliability tasks", () => {
         jobId: "export_1",
         status: "completed",
         rowsExported: 2
+      })
+    );
+  });
+
+  it("runs production quality eval loop and creates incidents on degradation", async () => {
+    listOrganizationIdsMock.mockResolvedValueOnce(["org_1"]);
+    getAnswerVerificationWindowStatsMock.mockResolvedValueOnce({
+      total: 8,
+      blocked: 3,
+      passRate: 62.5,
+      groundednessBlocked: 2,
+      freshnessBlocked: 2,
+      permissionSafetyBlocked: 1
+    });
+    listRecentAnswerVerificationRunsMock.mockResolvedValueOnce([
+      {
+        chatMessageId: "msg_1",
+        status: "blocked",
+        groundednessStatus: "blocked",
+        freshnessStatus: "blocked",
+        permissionSafetyStatus: "passed",
+        citationCoverage: 0.3,
+        unsupportedClaims: 2,
+        reasons: ["No citations"],
+        createdAt: "2026-02-14T00:00:00.000Z"
+      }
+    ]);
+    recordEvalRunMock.mockResolvedValueOnce({ id: "eval_1" });
+    recordEvalCasesMock.mockResolvedValueOnce(undefined);
+    listOpenIncidentEventsMock.mockResolvedValueOnce([]);
+
+    await qualityEvalLoop(
+      {
+        windowMinutes: 30,
+        minSamples: 5,
+        minPassRate: 85,
+        triggerReason: "answer_blocked"
+      },
+      {
+        logger: { info: vi.fn() }
+      } as any
+    );
+
+    expect(recordEvalRunMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizationId: "org_1",
+        scoreGoodPct: 62.5
+      })
+    );
+    expect(recordEvalCasesMock).toHaveBeenCalled();
+    expect(createIncidentEventMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        organizationId: "org_1",
+        eventType: "answer_quality_regression"
       })
     );
   });
