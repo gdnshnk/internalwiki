@@ -11,7 +11,7 @@ export default function ContactPage() {
           Contact
         </p>
         <h1>Talk with our team</h1>
-        <p>Tell us your goals, timeline, and integration needs. We will help you choose the right rollout path.</p>
+        <p>Tell us your goals, timeline, and integration needs. We will recommend the best rollout path.</p>
       </section>
 
       <section className="marketing-split marketing-split--equal">
@@ -26,7 +26,7 @@ export default function ContactPage() {
         <article className="marketing-panel">
           <h3>Need pricing first?</h3>
           <p className="surface-sub">Send a quick request and we&apos;ll share plan options.</p>
-          <Link href="/pricing" className="ask-submit" style={{ marginTop: "0.9rem", display: "inline-flex" }}>
+          <Link href="/pricing" className="ask-submit marketing-cta" style={{ marginTop: "0.9rem", display: "inline-flex" }}>
             View pricing
           </Link>
         </article>

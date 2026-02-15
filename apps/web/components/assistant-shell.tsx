@@ -91,19 +91,22 @@ export function AssistantShell(props: { children: ReactNode; recentThreads: Chat
         </div>
 
         <nav className="rail-nav">
-          {nav.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="rail-nav__item"
-              onClick={() => {
-                setMobileNavOpen(false);
-                setSettingsOpen(false);
-              }}
-            >
-              {item.label}
-            </Link>
-          ))}
+          {nav.map((item) => {
+            const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`rail-nav__item ${active ? "rail-nav__item--active" : ""}`}
+                onClick={() => {
+                  setMobileNavOpen(false);
+                  setSettingsOpen(false);
+                }}
+              >
+                {item.label}
+              </Link>
+            );
+          })}
         </nav>
 
         <div className="thread-list" aria-label="Recent threads">

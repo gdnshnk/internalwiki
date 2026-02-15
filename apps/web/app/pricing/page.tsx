@@ -32,10 +32,10 @@ export default function PricingPage() {
           expand.
         </p>
         <div className="marketing-hero__actions">
-          <Link href="/app" className="ask-submit">
+          <Link href="/app" className="ask-submit marketing-cta">
             Start free
           </Link>
-          <Link href="/contact" className="chip">
+          <Link href="/contact" className="chip marketing-chip">
             Talk to sales
           </Link>
         </div>
@@ -65,12 +65,24 @@ export default function PricingPage() {
             <h3>{plan.priceMonthly}</h3>
             <p className="surface-sub pricing-card__summary">{PLAN_POSITIONING[plan.tier].summary}</p>
 
-            <div className="pricing-meta">
-              <p className="surface-sub">Annual: {plan.annualPriceMonthlyEquivalent} billed annually</p>
-              <p className="surface-sub">Who pays: {plan.whoPays}</p>
-              <p className="surface-sub">Included AI: {plan.aiCredits}</p>
-              <p className="surface-sub">Overage: {plan.overage}</p>
-            </div>
+            <ul className="pricing-facts" aria-label={`${plan.tier} pricing details`}>
+              <li>
+                <span>Annual</span>
+                <strong>{plan.annualPriceMonthlyEquivalent} billed annually</strong>
+              </li>
+              <li>
+                <span>Who pays</span>
+                <strong>{plan.whoPays}</strong>
+              </li>
+              <li>
+                <span>Included AI</span>
+                <strong>{plan.aiCredits}</strong>
+              </li>
+              <li>
+                <span>Overage</span>
+                <strong>{plan.overage}</strong>
+              </li>
+            </ul>
 
             <ul className="marketing-list pricing-list">
               {plan.highlights.map((highlight) => (
@@ -79,7 +91,7 @@ export default function PricingPage() {
             </ul>
 
             <div className="pricing-card__actions">
-              <Link href={plan.tier === "business" ? "/contact" : "/app"} className="ask-submit">
+              <Link href={plan.tier === "business" ? "/contact" : "/app"} className="ask-submit marketing-cta">
                 {plan.tier === "business" ? "Talk to sales" : "Start now"}
               </Link>
             </div>
@@ -96,7 +108,7 @@ export default function PricingPage() {
           Built for larger deployments that need custom terms, onboarding support, and expanded governance.
         </p>
         <div className="pricing-card__actions">
-          <Link href="/contact" className="ask-submit">
+          <Link href="/contact" className="ask-submit marketing-cta">
             Contact sales
           </Link>
         </div>

@@ -3,8 +3,8 @@ import { MarketingNav } from "@/components/marketing-nav";
 
 const trustSignals = [
   "Cited answers your team can verify",
-  "Up-to-date sources prioritized by default",
-  "Access-aware answers across Slack, Microsoft 365, and Google Workspace"
+  "Current sources prioritized by default",
+  "Access-aware responses across Slack, Microsoft 365, and Google Workspace"
 ];
 
 export default function MarketingPage() {
@@ -15,7 +15,7 @@ export default function MarketingPage() {
       <section className="home-hero home-hero--single">
         <div className="home-hero__copy">
           <p className="workspace-header__eyebrow" style={{ margin: 0 }}>
-            Trusted AI For Company Knowledge
+            Enterprise Knowledge Assistant
           </p>
           <h1>Get clear answers from your company knowledge.</h1>
           <p className="home-hero__lede">
@@ -23,10 +23,10 @@ export default function MarketingPage() {
           </p>
 
           <div className="home-hero__actions">
-            <Link href="/pricing" className="ask-submit">
+            <Link href="/pricing" className="ask-submit marketing-cta">
               See plans
             </Link>
-            <Link href="/contact" className="chip">
+            <Link href="/contact" className="chip marketing-chip">
               Get in touch
             </Link>
           </div>
