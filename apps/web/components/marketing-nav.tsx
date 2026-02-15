@@ -10,7 +10,6 @@ export function MarketingNav() {
     <header className="marketing-nav">
       <Link href="/" className="marketing-brand">
         <img src="/logo-mark.svg" alt="InternalWiki" className="marketing-brand__logo" />
-        <span className="marketing-brand__wordmark">InternalWiki</span>
       </Link>
 
       <nav className="marketing-nav__links" aria-label="Public navigation">

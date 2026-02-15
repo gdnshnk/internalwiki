@@ -55,7 +55,7 @@ export default function MarketingPage() {
               </li>
               <li>
                 <span>Owner</span>
-                <strong>Security Operations</strong>
+                <strong>Amina Rahman</strong>
               </li>
               <li>
                 <span>Updated</span>

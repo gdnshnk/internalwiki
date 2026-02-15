@@ -36,11 +36,11 @@ export const PUBLIC_PRICING_PLANS = [
     aiCredits: "100 credits per workspace / month",
     overage: "$0.30 / credit",
     highlights: [
-      "Unlimited readers",
-      "Cited summaries and core search",
-      "Up to 2 integrations",
-      "Daily sync",
-      "Basic support"
+      "Unlimited read access for your team",
+      "Cited summaries and fast search",
+      "Up to 2 connected tools",
+      "Daily automated sync",
+      "Email support"
     ]
   },
   {
@@ -48,12 +48,12 @@ export const PUBLIC_PRICING_PLANS = [
     priceMonthly: "$12 / Creator",
     annualPriceMonthlyEquivalent: "$10 / Creator",
     whoPays: "Creator seats only",
-    aiCredits: "250 credits per paid creator / month (pooled)",
+    aiCredits: "250 credits per paid creator / month",
     overage: "$0.25 / credit",
     highlights: [
-      "Unlimited readers",
+      "Everything in Free",
       "Slack, Microsoft 365, and Google connectors",
-      "Auto-sync",
+      "Automatic sync scheduling",
       "Answer quality standards",
       "Role-based access controls"
     ]
@@ -63,13 +63,13 @@ export const PUBLIC_PRICING_PLANS = [
     priceMonthly: "$24 / Creator",
     annualPriceMonthlyEquivalent: "$20 / Creator",
     whoPays: "Creator seats only",
-    aiCredits: "500 credits per paid creator / month (pooled)",
+    aiCredits: "500 credits per paid creator / month",
     overage: "$0.18 / credit",
     highlights: [
       "Everything in Pro",
-      "SAML SSO and SCIM",
+      "SAML SSO and SCIM provisioning",
       "Audit export and compliance reporting",
-      "Domain and invite controls",
+      "Domain and invite governance",
       "Advanced access checks"
     ]
   }

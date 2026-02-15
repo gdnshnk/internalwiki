@@ -17,7 +17,14 @@ const PLAN_POSITIONING = {
   }
 } as const;
 
-export default function PricingPage() {
+export default async function PricingPage({
+  searchParams
+}: {
+  searchParams: Promise<{ billing?: string }>;
+}) {
+  const resolvedSearch = await searchParams;
+  const billingCycle = resolvedSearch.billing === "annual" ? "annual" : "monthly";
+
   return (
     <main className="marketing-shell marketing-shell--premium">
       <MarketingNav />
@@ -41,62 +48,75 @@ export default function PricingPage() {
         </div>
       </section>
 
-      <section className="pricing-highlights" aria-label="Pricing highlights">
-        <p className="pricing-highlight-pill">Unlimited readers on every plan</p>
-        <p className="pricing-highlight-pill">Slack, Microsoft 365, and Google integrations</p>
-        <p className="pricing-highlight-pill">Business unlocks SSO, SCIM, and audit controls</p>
+      <section className="pricing-cycle-toggle" aria-label="Billing cycle">
+        <Link
+          href="/pricing?billing=monthly"
+          className={`chip pricing-cycle-chip ${billingCycle === "monthly" ? "pricing-cycle-chip--active" : ""}`}
+        >
+          Monthly
+        </Link>
+        <Link
+          href="/pricing?billing=annual"
+          className={`chip pricing-cycle-chip ${billingCycle === "annual" ? "pricing-cycle-chip--active" : ""}`}
+        >
+          Annual
+        </Link>
       </section>
 
       <section className="pricing-grid pricing-grid--modern" aria-label="Pricing plans">
-        {PUBLIC_PRICING_PLANS.map((plan) => (
-          <article
-            key={plan.tier}
-            className={`marketing-panel pricing-card pricing-card--modern ${plan.tier === "pro" ? "pricing-card--featured" : ""}`}
-          >
-            <div className="pricing-card__top">
-              <p className="workspace-header__eyebrow" style={{ margin: 0 }}>
-                {plan.tier.toUpperCase()}
-              </p>
-              <span className={`pricing-badge ${plan.tier === "pro" ? "pricing-badge--featured" : ""}`}>
-                {PLAN_POSITIONING[plan.tier].label}
-              </span>
-            </div>
+        {PUBLIC_PRICING_PLANS.map((plan) => {
+          const displayPrice = billingCycle === "annual" ? plan.annualPriceMonthlyEquivalent : plan.priceMonthly;
+          const billingLabel = billingCycle === "annual" ? "Billed annually" : "Billed monthly";
+          return (
+            <article
+              key={plan.tier}
+              className={`marketing-panel pricing-card pricing-card--modern ${plan.tier === "pro" ? "pricing-card--featured" : ""}`}
+            >
+              <div className="pricing-card__top">
+                <p className="workspace-header__eyebrow" style={{ margin: 0 }}>
+                  {plan.tier.toUpperCase()}
+                </p>
+                <span className={`pricing-badge ${plan.tier === "pro" ? "pricing-badge--featured" : ""}`}>
+                  {PLAN_POSITIONING[plan.tier].label}
+                </span>
+              </div>
 
-            <h3>{plan.priceMonthly}</h3>
-            <p className="surface-sub pricing-card__summary">{PLAN_POSITIONING[plan.tier].summary}</p>
+              <h3>{displayPrice}</h3>
+              <p className="surface-sub pricing-card__summary">{PLAN_POSITIONING[plan.tier].summary}</p>
 
-            <ul className="pricing-facts" aria-label={`${plan.tier} pricing details`}>
-              <li>
-                <span>Annual</span>
-                <strong>{plan.annualPriceMonthlyEquivalent} billed annually</strong>
-              </li>
-              <li>
-                <span>Who pays</span>
-                <strong>{plan.whoPays}</strong>
-              </li>
-              <li>
-                <span>Included AI</span>
-                <strong>{plan.aiCredits}</strong>
-              </li>
-              <li>
-                <span>Overage</span>
-                <strong>{plan.overage}</strong>
-              </li>
-            </ul>
+              <ul className="pricing-facts" aria-label={`${plan.tier} pricing details`}>
+                <li>
+                  <span>Billing</span>
+                  <strong>{billingLabel}</strong>
+                </li>
+                <li>
+                  <span>Who pays</span>
+                  <strong>{plan.whoPays}</strong>
+                </li>
+                <li>
+                  <span>Included AI</span>
+                  <strong>{plan.aiCredits}</strong>
+                </li>
+                <li>
+                  <span>Overage</span>
+                  <strong>{plan.overage}</strong>
+                </li>
+              </ul>
 
-            <ul className="marketing-list pricing-list">
-              {plan.highlights.map((highlight) => (
-                <li key={highlight}>{highlight}</li>
-              ))}
-            </ul>
+              <ul className="marketing-list pricing-list">
+                {plan.highlights.map((highlight) => (
+                  <li key={highlight}>{highlight}</li>
+                ))}
+              </ul>
 
-            <div className="pricing-card__actions">
-              <Link href={plan.tier === "business" ? "/contact" : "/app"} className="ask-submit marketing-cta">
-                {plan.tier === "business" ? "Talk to sales" : "Start now"}
-              </Link>
-            </div>
-          </article>
-        ))}
+              <div className="pricing-card__actions">
+                <Link href={plan.tier === "business" ? "/contact" : "/app"} className="ask-submit marketing-cta">
+                  {plan.tier === "business" ? "Talk to sales" : "Start now"}
+                </Link>
+              </div>
+            </article>
+          );
+        })}
       </section>
 
       <section className="marketing-panel pricing-enterprise-panel">
