@@ -25,7 +25,7 @@ export default async function ConnectorSettingsPage() {
         <h1 className="surface-title">Workspace integrations</h1>
         <p className="surface-sub">
           Manage connected workspace sources, sync status, and re-auth controls. Current catalog includes Google
-          Workspace, Slack, and Microsoft 365. New OAuth connections auto-queue first sync to speed setup readiness.
+          Workspace, Slack, and Microsoft 365. New OAuth connections automatically start first sync.
         </p>
       </section>
 

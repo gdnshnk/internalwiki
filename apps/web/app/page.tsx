@@ -2,9 +2,9 @@ import Link from "next/link";
 import { MarketingNav } from "@/components/marketing-nav";
 
 const trustSignals = [
-  "Groundedness enforced: uncited or unsupported answers are blocked",
-  "Freshness enforced: recent evidence required by default",
-  "Permission safety enforced across Slack, Microsoft 365, and Google Workspace"
+  "Cited answers your team can verify",
+  "Up-to-date sources prioritized by default",
+  "Access-aware answers across Slack, Microsoft 365, and Google Workspace"
 ];
 
 export default function MarketingPage() {
@@ -19,15 +19,15 @@ export default function MarketingPage() {
           </p>
           <h1>Get clear answers from your company knowledge.</h1>
           <p className="home-hero__lede">
-            InternalWiki connects your tools and returns cited summaries only when quality checks pass.
+            InternalWiki connects your tools and delivers clear, cited summaries your teams can trust.
           </p>
 
           <div className="home-hero__actions">
             <Link href="/pricing" className="ask-submit">
-              See pricing
+              See plans
             </Link>
             <Link href="/contact" className="chip">
-              Talk to sales
+              Get in touch
             </Link>
           </div>
 

@@ -8,10 +8,10 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { usePathname } from "next/navigation";
 
 const nav = [
-  { href: "/app", label: "Search" },
+  { href: "/app", label: "Assistant" },
   { href: "/app/knowledge", label: "Knowledge" },
-  { href: "/app/chat", label: "Threads" },
-  { href: "/app/review", label: "Review" }
+  { href: "/app/chat", label: "Conversations" },
+  { href: "/app/review", label: "Reviews" }
 ];
 
 export function AssistantShell(props: { children: ReactNode; recentThreads: ChatThreadSummary[] }) {
@@ -159,7 +159,7 @@ export function AssistantShell(props: { children: ReactNode; recentThreads: Chat
                     setMobileNavOpen(false);
                   }}
                 >
-                  Connectors
+                  Integrations
                 </Link>
                 <Link
                   href="/app/settings/security"
@@ -181,7 +181,7 @@ export function AssistantShell(props: { children: ReactNode; recentThreads: Chat
                     setMobileNavOpen(false);
                   }}
                 >
-                  Ops
+                  Operations
                 </Link>
                 <Link
                   href="/app?onboarding=1"
@@ -203,7 +203,7 @@ export function AssistantShell(props: { children: ReactNode; recentThreads: Chat
                   role="menuitem"
                   onClick={() => void logout()}
                 >
-                  Logout
+                  Sign out
                 </button>
               </div>
             ) : null}

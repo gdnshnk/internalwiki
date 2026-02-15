@@ -45,13 +45,13 @@ export default async function DocumentPage({
       </section>
 
       <section className="surface-card">
-        <h2 className="surface-title">Grounded summary</h2>
+        <h2 className="surface-title">Summary</h2>
         <p className="surface-sub">{doc.summary}</p>
       </section>
 
       {documentContent ? (
         <section className="surface-card">
-          <h2 className="surface-title">Document Content</h2>
+          <h2 className="surface-title">Document content</h2>
           <DocumentViewer
             content={documentContent.content}
             citations={citations}
@@ -61,16 +61,13 @@ export default async function DocumentPage({
       ) : null}
 
       <section className="surface-card">
-        <h3 className="surface-title">Provenance</h3>
+        <h3 className="surface-title">Source details</h3>
         <div className="data-grid">
-          <div className="data-pill">Version: {latestVersion?.id ?? "not available"}</div>
+          <div className="data-pill">Version record: {latestVersion ? "Available" : "Not available"}</div>
           <div className="data-pill">Citations: {citations.length}</div>
           <div className="data-pill">Author: {doc.owner}</div>
           <div className="data-pill">Source: {doc.sourceType}</div>
           <div className="data-pill">Format: {doc.sourceFormat ?? "unknown"}</div>
-          <div className="data-pill">External ID: {doc.sourceExternalId ?? "not available"}</div>
-          <div className="data-pill">Sync run: {latestVersion?.connectorSyncRunId ?? "not available"}</div>
-          <div className="data-pill">Checksum: {latestVersion?.sourceChecksum ?? "not available"}</div>
           <a className="data-pill" href={doc.canonicalSourceUrl ?? doc.sourceUrl} target="_blank" rel="noreferrer">
             Open source
           </a>
@@ -83,10 +80,9 @@ export default async function DocumentPage({
           {versionTimeline.length > 0 ? (
             versionTimeline.map((version) => (
               <div key={version.id} className="data-pill">
-                <strong>{version.sourceVersionLabel ?? version.id}</strong>
+                <strong>{version.sourceVersionLabel ?? "Recorded version"}</strong>
                 <div>Ingested: {new Date(version.createdAt).toLocaleString()}</div>
                 <div>Source updated: {new Date(version.sourceLastUpdatedAt ?? version.createdAt).toLocaleString()}</div>
-                <div>Run: {version.connectorSyncRunId ?? "n/a"}</div>
               </div>
             ))
           ) : (

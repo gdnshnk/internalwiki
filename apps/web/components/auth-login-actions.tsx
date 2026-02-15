@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import type { AuthErrorCode, AuthIntent, AuthStartRequest, AuthStartResponse } from "@internalwiki/core";
 
 const authErrorCopy: Record<AuthErrorCode, string> = {
-  no_account: "No account membership found for this workspace. Register a new workspace account or ask your admin for an invite.",
+  no_account: "We could not find your account in this workspace. Create an account or ask your admin for an invite.",
   invalid_invite: "Invite code is invalid or already used. Request a new invite from an admin.",
   domain_not_allowed: "Your company email domain is not allowed for this organization.",
   invite_expired: "Invite code expired. Request a fresh invite from an admin."
@@ -47,7 +47,9 @@ export function AuthLoginActions(props: {
   const derivedError = useMemo(() => errorMessage(props.authErrorCode), [props.authErrorCode]);
   const panelTitle = intent === "login" ? "Welcome back" : "Create your account";
   const panelSubtitle =
-    intent === "login" ? "Sign in with your work email to continue." : "Use your work email to create your account.";
+    intent === "login"
+      ? "Sign in with your work email to access your workspace."
+      : "Use your work email to create your workspace account.";
 
   async function startGoogleOAuth(): Promise<void> {
     if (busy) {
@@ -177,7 +179,7 @@ export function AuthLoginActions(props: {
 
       const payload = (await response.json()) as { ok?: boolean; redirectTo?: string; error?: string };
       if (!response.ok || !payload.ok || !payload.redirectTo) {
-        throw new Error(payload.error ?? `Failed to bootstrap local session (${response.status}).`);
+        throw new Error(payload.error ?? `Failed local developer sign-in (${response.status}).`);
       }
 
       router.push(payload.redirectTo);
@@ -210,7 +212,7 @@ export function AuthLoginActions(props: {
             className={`auth-intent-toggle__button ${intent === "login" ? "is-active" : ""}`}
             onClick={() => setIntent("login")}
           >
-            Login
+            Sign in
           </button>
           <button
             type="button"
@@ -219,7 +221,7 @@ export function AuthLoginActions(props: {
             className={`auth-intent-toggle__button ${intent === "register" ? "is-active" : ""}`}
             onClick={() => setIntent("register")}
           >
-            Register
+            Create account
           </button>
         </div>
 
@@ -298,7 +300,7 @@ export function AuthLoginActions(props: {
             </>
           ) : (
             <a href="/contact" className="auth-secondary-link">
-              Forgot your password?
+              Forgot password?
             </a>
           )}
 
@@ -329,7 +331,7 @@ export function AuthLoginActions(props: {
         ) : null}
 
         <div className="auth-divider" role="separator" aria-label="Alternative sign in">
-          <span>or continue with</span>
+          <span>Or continue with</span>
         </div>
 
         <button
@@ -340,8 +342,8 @@ export function AuthLoginActions(props: {
         >
           {busy === "google"
             ? intent === "register"
-              ? "Starting registration..."
-              : "Connecting Google..."
+              ? "Opening Google sign-up..."
+              : "Opening Google sign-in..."
             : intent === "register"
               ? "Sign up with Google"
               : "Sign in with Google"}
@@ -354,14 +356,14 @@ export function AuthLoginActions(props: {
             disabled={!props.canUseBootstrap || busy !== null}
             onClick={() => void bootstrapLocalSession()}
           >
-            {busy === "bootstrap" ? "Bootstrapping..." : "Bootstrap local session"}
+            {busy === "bootstrap" ? "Signing in locally..." : "Developer quick sign-in (local only)"}
           </button>
         ) : null}
 
         {!props.canUseGoogle ? <p className="auth-config-note">Google sign-in is currently unavailable.</p> : null}
         {!props.canUsePassword ? <p className="auth-config-note">Email sign-in is currently unavailable.</p> : null}
         {props.showDevBootstrap && !props.canUseBootstrap ? (
-          <p className="auth-config-note">Local test sign-in is currently unavailable.</p>
+          <p className="auth-config-note">Local developer sign-in is currently unavailable.</p>
         ) : null}
 
         {derivedError ? <p className="error-banner">{derivedError}</p> : null}

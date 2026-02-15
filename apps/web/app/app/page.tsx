@@ -60,8 +60,8 @@ export default async function DashboardPage({
           <p className="workspace-header__eyebrow">First run</p>
           <h1 className="surface-title">Connect your first workspace source</h1>
           <p className="surface-sub">
-            Add your first source integration to start indexing organization knowledge for grounded answers.
-            Current connector catalog includes Google Workspace, Slack, and Microsoft 365.
+            Connect your first integration to start indexing company knowledge.
+            Available integrations include Google Workspace, Slack, and Microsoft 365.
           </p>
           <a href="/app/settings/connectors" className="ask-submit" style={{ display: "inline-flex", marginTop: "0.8rem" }}>
             Open connector setup
@@ -79,8 +79,7 @@ export default async function DashboardPage({
           <p className="workspace-header__eyebrow">First sync</p>
           <h1 className="surface-title">Run your first sync</h1>
           <p className="surface-sub">
-            Your source integrations are configured, but no documents are indexed yet. Trigger sync from connector
-            settings.
+            Your integrations are connected, but no content is indexed yet. Start a sync from integration settings.
           </p>
           <a href="/app/settings/connectors" className="ask-submit" style={{ display: "inline-flex", marginTop: "0.8rem" }}>
             View connector health
@@ -110,7 +109,7 @@ export default async function DashboardPage({
         subtitle={
           selectedThread
             ? `Resumed thread with ${selectedThread.messages.length} prior messages and citations.`
-            : "Ask once, get grounded answers with traceable evidence and trust scores."
+            : "Ask questions and get cited, access-aware answers from your connected knowledge."
         }
         defaultMode="ask"
         quickMode

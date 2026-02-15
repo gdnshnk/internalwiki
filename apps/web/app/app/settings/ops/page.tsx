@@ -6,13 +6,13 @@ import { redirect } from "next/navigation";
 function metricLabel(name: string): string {
   switch (name) {
     case "api_availability":
-      return "API availability";
+      return "Service availability";
     case "assist_latency_p95_ms":
-      return "Assistant latency p95";
+      return "Assistant response speed (p95)";
     case "sync_success_rate":
       return "Sync success rate";
     case "queue_lag_seconds":
-      return "Queue lag";
+      return "Processing delay";
     default:
       return name;
   }
@@ -52,15 +52,14 @@ export default async function OpsSettingsPage() {
     <main className="page-wrap">
       <section className="surface-card">
         <p className="workspace-header__eyebrow">Operations</p>
-        <h1 className="surface-title">Reliability and incident posture</h1>
+        <h1 className="surface-title">Service health and incidents</h1>
         <p className="surface-sub">
-          Track SLO health, burn-rate pressure, and open incidents across connectors, queue throughput, and assistant
-          response paths.
+          Track reliability targets, queue health, and active incidents across your workspace.
         </p>
       </section>
 
       <section className="surface-card">
-        <h2 className="surface-title">SLO summary</h2>
+        <h2 className="surface-title">Service summary</h2>
         <div className="data-grid" style={{ marginTop: "0.8rem" }}>
           <div className="data-pill">Burn rate: {slo.burnRate.toFixed(2)}</div>
           <div className="data-pill">Open incidents: {slo.openIncidentCount}</div>

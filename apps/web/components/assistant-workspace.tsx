@@ -35,10 +35,10 @@ const modeCopy: Record<
     ]
   },
   trace: {
-    launchPlaceholder: "Summarize claim traceability with exact source evidence...",
-    threadPlaceholder: "Trace another claim and summarize supporting evidence...",
+    launchPlaceholder: "Show where a statement comes from using cited sources...",
+    threadPlaceholder: "Check another statement with supporting sources...",
     quickPrompts: [
-      "Summarize traceability for incident severity classification policy.",
+      "Show where our incident severity policy is documented.",
       "Summarize who approved the latest pricing exceptions with citations.",
       "Summarize the origin of the current security review checklist."
     ]
@@ -265,13 +265,13 @@ export function AssistantWorkspace(props: {
       }
     } catch (requestError) {
       const message = (requestError as Error).message;
-      setError(`${message}. Try retrying or broadening source filters.`);
+      setError(`${message}. Try broadening your request or selecting more sources.`);
       setMessages((prev) =>
         prev.map((entry) =>
           entry.id === streamAssistantMessageId
             ? {
                 ...entry,
-                content: "I couldn't produce a grounded answer. Try a broader query or remove source filters."
+                content: "I could not find enough trusted evidence for this request. Try a broader question or more sources."
               }
             : entry
         )

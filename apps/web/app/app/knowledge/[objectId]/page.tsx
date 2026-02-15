@@ -38,14 +38,14 @@ export default async function KnowledgeObjectPage({
   return (
     <main className="page-wrap">
       <section className="surface-card">
-        <p className="workspace-header__eyebrow">Knowledge object</p>
+        <p className="workspace-header__eyebrow">Knowledge item</p>
         <h1 className="surface-title">{item.title}</h1>
         <p className="surface-sub">{item.slug}</p>
 
         <div className="data-grid" style={{ marginTop: "0.8rem" }}>
           <div className="data-pill">Freshness: {item.freshnessStatus}</div>
           <div className="data-pill">Source type: {item.sourceType}</div>
-          <div className="data-pill">Owner: {item.ownerUserId}</div>
+          <div className="data-pill">Owner: Assigned</div>
           <div className="data-pill">Review every: {item.reviewIntervalDays} days</div>
           <div className="data-pill">Review due: {new Date(item.reviewDueAt).toLocaleString()}</div>
           <div className="data-pill">Confidence: {Math.round(item.confidenceScore * 100)}%</div>
@@ -67,12 +67,12 @@ export default async function KnowledgeObjectPage({
       </section>
 
       <section className="surface-card">
-        <h2 className="surface-title">Ownership and policy</h2>
+        <h2 className="surface-title">Ownership and access</h2>
         <div className="data-grid" style={{ marginTop: "0.8rem" }}>
           <div className="data-pill">Reviewers: {reviewers.length}</div>
           <div className="data-pill">Tags: {tags.length}</div>
           <div className="data-pill">Dependencies: {dependencies.length}</div>
-          <div className="data-pill">Permission rules: {permissionRules.length}</div>
+          <div className="data-pill">Access rules: {permissionRules.length}</div>
         </div>
 
         {tags.length > 0 ? (

@@ -20,7 +20,7 @@ export default async function ReviewPage() {
       <section className="surface-card">
         <p className="workspace-header__eyebrow">Governance</p>
         <h1 className="surface-title">Review queue</h1>
-        <p className="surface-sub">Manage summary approvals and knowledge freshness tasks in one place.</p>
+        <p className="surface-sub">Review summary requests and knowledge updates in one place.</p>
       </section>
 
       <section className="surface-card">
@@ -30,12 +30,12 @@ export default async function ReviewPage() {
 
       {summaryItems.map((item) => (
         <section key={item.id} className="surface-card">
-          <h3 className="surface-title">{item.summaryId}</h3>
+          <h3 className="surface-title">Summary review item</h3>
           <p className="surface-sub">Created {new Date(item.createdAt).toLocaleString()}</p>
 
           <div className="data-grid" style={{ marginTop: "0.7rem" }}>
-            <div className="data-pill">Summary ID: {item.summaryId}</div>
             <div className="data-pill">Status: {item.status}</div>
+            <div className="data-pill">Queue item</div>
           </div>
 
           <ReviewActions orgId={session.organizationId} summaryId={item.summaryId} />
@@ -43,8 +43,8 @@ export default async function ReviewPage() {
       ))}
 
       <section className="surface-card">
-        <h2 className="surface-title">Knowledge freshness tasks</h2>
-        <p className="surface-sub">Resolve stale, dependency-risk, low-confidence, and canonicalization work.</p>
+        <h2 className="surface-title">Knowledge maintenance tasks</h2>
+        <p className="surface-sub">Resolve stale content, dependency changes, and quality follow-ups.</p>
       </section>
 
       {knowledgeTasks.length === 0 ? (
@@ -57,14 +57,13 @@ export default async function ReviewPage() {
             <h3 className="surface-title">{task.taskType.replaceAll("_", " ")}</h3>
             <p className="surface-sub">{task.reason}</p>
             <div className="data-grid" style={{ marginTop: "0.7rem" }}>
-              <div className="data-pill">Task ID: {task.id}</div>
               <div className="data-pill">Status: {task.status}</div>
               <div className="data-pill">Priority: {task.priority}</div>
               <div className="data-pill">
                 Created: {new Date(task.createdAt).toLocaleString()}
               </div>
               {task.knowledgeObjectId ? (
-                <div className="data-pill">Knowledge object: {task.knowledgeObjectId}</div>
+                <div className="data-pill">Linked knowledge item: Available</div>
               ) : null}
             </div>
 

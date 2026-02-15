@@ -47,7 +47,7 @@ export function WaitlistForm(props: { sourcePage: string }) {
       setCompany("");
       setRole("");
       setWebsite("");
-      setState({ status: "success", message: payload.message ?? "Thanks. We will contact you shortly." });
+      setState({ status: "success", message: payload.message ?? "Thanks. Our team will reach out shortly." });
     } catch {
       setState({ status: "error", message: "Network error. Please try again." });
     }
@@ -95,7 +95,7 @@ export function WaitlistForm(props: { sourcePage: string }) {
         />
       </label>
       <button type="submit" className="ask-submit" disabled={state.status === "submitting"}>
-        {state.status === "submitting" ? "Submitting..." : "Request pricing info"}
+        {state.status === "submitting" ? "Sending..." : "Get in touch"}
       </button>
       {state.status === "success" ? <p className="waitlist-form__ok">{state.message}</p> : null}
       {state.status === "error" ? <p className="error-banner">{state.message}</p> : null}

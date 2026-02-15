@@ -11,7 +11,7 @@ export default function ContactPage() {
           Contact
         </p>
         <h1>Talk with our team</h1>
-        <p>Tell us what you want to solve and the answer quality standards you need to enforce.</p>
+        <p>Tell us your goals, timeline, and integration needs. We will help you choose the right rollout path.</p>
       </section>
 
       <section className="marketing-split marketing-split--equal">
@@ -20,7 +20,7 @@ export default function ContactPage() {
           <p>
             <a href="mailto:hello@internalwiki.com">hello@internalwiki.com</a>
           </p>
-          <p className="surface-sub">Include your team size, key integrations, and target launch date.</p>
+          <p className="surface-sub">Include team size, key integrations, and your target launch date.</p>
         </article>
 
         <article className="marketing-panel">

@@ -22,7 +22,7 @@ export function MarketingNav() {
 
       <div className="marketing-nav__actions">
         <Link href="/app" className="ask-submit">
-          Open Assistant
+          Sign in
         </Link>
       </div>
     </header>

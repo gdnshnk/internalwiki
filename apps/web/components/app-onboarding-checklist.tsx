@@ -23,23 +23,23 @@ export function AppOnboardingChecklist(props: {
       {
         id: "connect",
         title: "Connect your first source",
-        description: "Add Google Workspace, Slack, or Microsoft 365 so InternalWiki can ingest trusted company knowledge.",
+        description: "Connect Google Workspace, Slack, or Microsoft 365 to bring your company knowledge together.",
         done: props.progress.connected,
         href: "/app/settings/connectors",
-        cta: "Open connectors"
+        cta: "Open integrations"
       },
       {
         id: "sync",
         title: "Run your first sync",
-        description: "Index documents so answers can include citations, confidence, and source traceability.",
+        description: "Run the first sync so your team can get cited answers from current sources.",
         done: props.progress.synced,
         href: "/app/settings/connectors",
-        cta: "Run sync setup"
+        cta: "Open sync setup"
       },
       {
         id: "ask",
         title: "Ask your first question",
-        description: "Use Ask mode to test retrieval and confirm evidence-backed responses in your workspace.",
+        description: "Ask a real question to see how answers are presented with supporting sources.",
         done: props.progress.askedFirstQuestion,
         href: "/app/chat",
         cta: "Open assistant"
@@ -106,11 +106,10 @@ export function AppOnboardingChecklist(props: {
     <section className="surface-card">
       <p className="workspace-header__eyebrow">Getting started</p>
       <h2 className="surface-title">
-        {completed ? "Onboarding completed" : "Set up InternalWiki in three steps"}
+        {completed ? "Setup complete" : "Set up InternalWiki in three steps"}
       </h2>
       <p className="surface-sub">
-        InternalWiki connects your workspace tools, indexes docs, and answers with evidence. If you were redirected
-        to login before `/app`, authentication is working as expected and this checklist guides first-time setup.
+        Follow this checklist once to connect sources, sync content, and start asking questions with confidence.
       </p>
 
       <ol className="onboarding-list">

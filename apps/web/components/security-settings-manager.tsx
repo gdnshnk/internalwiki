@@ -55,6 +55,10 @@ type AnswerQualityContractSummary = {
   };
 };
 
+function statusLabel(value: "passed" | "blocked"): string {
+  return value === "blocked" ? "Needs attention" : "Pass";
+}
+
 export function SecuritySettingsManager(props: {
   orgId: string;
   initialPolicy: SessionPolicy;
@@ -90,7 +94,7 @@ export function SecuritySettingsManager(props: {
       }
       setJobs(payload.jobs ?? []);
       setIntegrity(payload.integrity ?? integrity);
-      setMessage("Audit export status refreshed.");
+      setMessage("Audit export status updated.");
     } catch (requestError) {
       setError((requestError as Error).message);
     } finally {
@@ -127,7 +131,7 @@ export function SecuritySettingsManager(props: {
       setPolicy(payload.policy);
       setMessage(
         forceRevokeAll
-          ? `Policy updated and revoked ${payload.revokedSessions ?? 0} active sessions.`
+          ? `Policy updated and ${payload.revokedSessions ?? 0} active sessions were signed out.`
           : "Session policy updated."
       );
     } catch (requestError) {
@@ -155,7 +159,7 @@ export function SecuritySettingsManager(props: {
         throw new Error(payload.error ?? `Failed to request audit export (${response.status})`);
       }
       setJobs((previous) => [payload.job!, ...previous].slice(0, 20));
-      setMessage("Audit export requested. Worker picked up the job.");
+      setMessage("Audit export requested.");
     } catch (requestError) {
       setError((requestError as Error).message);
     } finally {
@@ -279,8 +283,7 @@ export function SecuritySettingsManager(props: {
       <section className="surface-card">
         <h2 className="surface-title">Session security policy</h2>
         <p className="surface-sub">
-          Configure default session lifetime, idle timeout, and concurrent session limit. Use revoke-all after policy
-          changes or during incident response.
+          Set session lifetime, idle timeout, and concurrent session limits for your workspace.
         </p>
 
         <div className="connector-form-grid" style={{ marginTop: "0.8rem" }}>
@@ -331,7 +334,7 @@ export function SecuritySettingsManager(props: {
             {busy === "save" ? "Saving..." : "Save policy"}
           </button>
           <button type="button" className="chip chip--active" disabled={busy !== null} onClick={() => void savePolicy(true)}>
-            {busy === "revoke" ? "Revoking..." : "Save + revoke all sessions"}
+            {busy === "revoke" ? "Saving..." : "Save and sign out all active sessions"}
           </button>
         </div>
       </section>
@@ -339,8 +342,7 @@ export function SecuritySettingsManager(props: {
       <section className="surface-card">
         <h2 className="surface-title">Audit export controls</h2>
         <p className="surface-sub">
-          Request immutable audit export jobs and verify hash-chain integrity before sharing evidence with security
-          stakeholders.
+          Export audit activity for security reviews and compliance evidence.
         </p>
 
         <div className="chip-row" style={{ marginTop: "0.8rem" }}>
@@ -353,10 +355,10 @@ export function SecuritySettingsManager(props: {
         </div>
 
         <div className="data-grid" style={{ marginTop: "0.8rem" }}>
-          <div className="data-pill">Integrity: {integrity.valid ? "Verified" : "Mismatch detected"}</div>
-          <div className="data-pill">Hashed events checked: {integrity.checked}</div>
+          <div className="data-pill">Audit integrity: {integrity.valid ? "Verified" : "Needs review"}</div>
+          <div className="data-pill">Events reviewed: {integrity.checked}</div>
           <div className="data-pill">Legacy events: {integrity.legacyEventsWithoutHash}</div>
-          {integrity.brokenEventId ? <div className="data-pill">Broken event: {integrity.brokenEventId}</div> : null}
+          {integrity.brokenEventId ? <div className="data-pill">Issue detected in audit history</div> : null}
         </div>
 
         <div className="data-grid" style={{ marginTop: "0.8rem" }}>
@@ -373,29 +375,27 @@ export function SecuritySettingsManager(props: {
       </section>
 
       <section className="surface-card">
-        <h2 className="surface-title">Answer quality contract</h2>
+        <h2 className="surface-title">Answer quality standards</h2>
         <p className="surface-sub">
-          Customer answers are released only when groundedness, freshness, and permission safety pass.
+          Answers are delivered only when evidence quality, source recency, and access protection checks pass.
         </p>
 
         <div className="data-grid" style={{ marginTop: "0.8rem" }}>
-          <div className="data-pill">Groundedness pass (7d): {contract.rolling7d.groundednessPassRate.toFixed(2)}%</div>
-          <div className="data-pill">Freshness pass (7d): {contract.rolling7d.freshnessPassRate.toFixed(2)}%</div>
+          <div className="data-pill">Evidence quality pass (7d): {contract.rolling7d.groundednessPassRate.toFixed(2)}%</div>
+          <div className="data-pill">Source recency pass (7d): {contract.rolling7d.freshnessPassRate.toFixed(2)}%</div>
           <div className="data-pill">
-            Permission safety pass (7d): {contract.rolling7d.permissionSafetyPassRate.toFixed(2)}%
+            Access protection pass (7d): {contract.rolling7d.permissionSafetyPassRate.toFixed(2)}%
           </div>
           <div className="data-pill">Overall pass (7d): {contract.rolling7d.passRate.toFixed(2)}%</div>
-          <div className="data-pill">Blocked (7d): {contract.rolling7d.blocked}</div>
-          <div className="data-pill">Contract version: {contract.version}</div>
+          <div className="data-pill">Answers held for review (7d): {contract.rolling7d.blocked}</div>
         </div>
         {contract.latest ? (
           <div className="msg-meta" style={{ marginTop: "0.8rem" }}>
             <span>
-              Latest statuses: {contract.latest.groundednessStatus}/{contract.latest.freshnessStatus}/
-              {contract.latest.permissionSafetyStatus}
+              Latest status: {statusLabel(contract.latest.groundednessStatus)}/
+              {statusLabel(contract.latest.freshnessStatus)}/{statusLabel(contract.latest.permissionSafetyStatus)}
             </span>
-            <span>Latest citation coverage {Math.round(contract.latest.citationCoverage * 100)}%</span>
-            <span>Latest unsupported claims {contract.latest.unsupportedClaims}</span>
+            <span>Latest evidence coverage {Math.round(contract.latest.citationCoverage * 100)}%</span>
           </div>
         ) : null}
       </section>

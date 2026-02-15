@@ -47,9 +47,9 @@ export default async function SecuritySettingsPage() {
     <main className="page-wrap">
       <section className="surface-card">
         <p className="workspace-header__eyebrow">Security</p>
-        <h1 className="surface-title">Enterprise trust controls</h1>
+        <h1 className="surface-title">Security and trust settings</h1>
         <p className="surface-sub">
-          Manage session hardening and audit export jobs for compliance, incident response, and access governance.
+          Manage sign-in policies, audit exports, answer quality standards, and privacy controls.
         </p>
       </section>
 

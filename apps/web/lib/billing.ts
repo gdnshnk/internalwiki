@@ -22,7 +22,7 @@ const BUSINESS_FEATURE_LABELS: Record<BusinessFeature, string> = {
   auditExport: "Audit export",
   compliancePosture: "Compliance posture",
   domainInviteControls: "Domain and invite controls",
-  advancedPermissionsDiagnostics: "Permissions diagnostics"
+  advancedPermissionsDiagnostics: "Advanced access checks"
 };
 
 const PLAN_ORDER: PlanTier[] = ["free", "pro", "business", "enterprise"];
@@ -32,7 +32,7 @@ export const PUBLIC_PRICING_PLANS = [
     tier: "free" as const,
     priceMonthly: "$0",
     annualPriceMonthlyEquivalent: "$0",
-    whoPays: "Up to 3 Creator/Admin seats",
+    whoPays: "Up to 3 creator seats",
     aiCredits: "100 credits per workspace / month",
     overage: "$0.30 / credit",
     highlights: [
@@ -47,30 +47,30 @@ export const PUBLIC_PRICING_PLANS = [
     tier: "pro" as const,
     priceMonthly: "$12 / Creator",
     annualPriceMonthlyEquivalent: "$10 / Creator",
-    whoPays: "Creator/Admin seats only",
+    whoPays: "Creator seats only",
     aiCredits: "250 credits per paid creator / month (pooled)",
     overage: "$0.25 / credit",
     highlights: [
       "Unlimited readers",
       "Slack, Microsoft 365, and Google connectors",
       "Auto-sync",
-      "Answer quality contract",
-      "Core RBAC"
+      "Answer quality standards",
+      "Role-based access controls"
     ]
   },
   {
     tier: "business" as const,
     priceMonthly: "$24 / Creator",
     annualPriceMonthlyEquivalent: "$20 / Creator",
-    whoPays: "Creator/Admin seats only",
+    whoPays: "Creator seats only",
     aiCredits: "500 credits per paid creator / month (pooled)",
     overage: "$0.18 / credit",
     highlights: [
       "Everything in Pro",
       "SAML SSO and SCIM",
-      "Audit export and compliance posture",
+      "Audit export and compliance reporting",
       "Domain and invite controls",
-      "Advanced permissions diagnostics"
+      "Advanced access checks"
     ]
   }
 ];

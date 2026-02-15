@@ -72,7 +72,7 @@ export function EvidenceRail(props: {
   const grouped = useMemo(() => {
     const groups = new Map<string, EvidenceItem[]>();
     for (const item of props.items) {
-      const key = item.title || "Untitled Source";
+      const key = item.title || "Untitled source";
       const existing = groups.get(key) ?? [];
       existing.push(item);
       groups.set(key, existing);
@@ -84,12 +84,12 @@ export function EvidenceRail(props: {
   const content = (
     <div className="evidence-rail__content">
       <div className="evidence-rail__head">
-        <h3>Evidence</h3>
-        <p>Ranked citations with author, date, version, and source provenance.</p>
+        <h3>Sources</h3>
+        <p>Cited passages used to generate this answer.</p>
       </div>
 
       {props.items.length === 0 ? (
-        <div className="evidence-empty">No sources yet. Ask a question to load evidence.</div>
+        <div className="evidence-empty">No sources yet. Ask a question to load cited evidence.</div>
       ) : (
         <ul className="source-list">
           {grouped.map(([title, items]) => (
@@ -101,7 +101,6 @@ export function EvidenceRail(props: {
               <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "grid", gap: "0.45rem" }}>
                 {items.map((item) => {
                   const active = props.activeSourceId === item.id;
-                  const checksumShort = item.provenance.checksum ? item.provenance.checksum.slice(0, 12) : null;
                   const updatedLabel = item.provenance.lastUpdatedAt
                     ? new Date(item.provenance.lastUpdatedAt).toLocaleDateString()
                     : "Unknown";
@@ -124,10 +123,13 @@ export function EvidenceRail(props: {
                       >
                         <div className="source-card__top">
                           <span className="source-badge">{connectorLabel(item.connectorType)}</span>
-                          <span className="source-score">Score {Math.round(item.sourceScore)}</span>
+                          <span className="source-score">Match {(item.relevance * 100).toFixed(0)}%</span>
                         </div>
-                        <p className="source-title">{item.provenance.documentTitle ?? item.reason.replaceAll("_", " ")}</p>
-                        <p className="source-title" style={{ fontSize: "0.73rem", color: "var(--text-muted)", fontWeight: 530, marginTop: "0.2rem" }}>
+                        <p className="source-title">{item.provenance.documentTitle ?? "Source excerpt"}</p>
+                        <p
+                          className="source-title"
+                          style={{ fontSize: "0.73rem", color: "var(--text-muted)", fontWeight: 530, marginTop: "0.2rem" }}
+                        >
                           {item.provenance.author ?? "Unknown author"} • {updatedLabel}
                         </p>
                         <p
@@ -138,12 +140,10 @@ export function EvidenceRail(props: {
                         />
                         <div className="msg-meta" style={{ marginTop: "0.45rem" }}>
                           {item.provenance.sourceFormat ? <span>Format {item.provenance.sourceFormat}</span> : null}
-                          {item.provenance.documentVersionId ? <span>Version {item.provenance.documentVersionId}</span> : null}
-                          {item.provenance.syncRunId ? <span>Run {item.provenance.syncRunId.slice(0, 8)}</span> : null}
-                          {checksumShort ? <span>Hash {checksumShort}</span> : null}
+                          {item.provenance.documentVersionId ? <span>Version record available</span> : null}
                         </div>
                         <div className="source-card__foot">
-                          <span>Relevance {(item.relevance * 100).toFixed(0)}%</span>
+                          <span>Open original source</span>
                           <a
                             href={item.provenance.canonicalSourceUrl ?? item.sourceUrl}
                             target="_blank"

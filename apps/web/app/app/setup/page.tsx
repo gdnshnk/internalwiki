@@ -3,6 +3,10 @@ import { getSetupStatus } from "@/lib/setup-status";
 import { redirect } from "next/navigation";
 import { getAnswerQualityContractSummary } from "@internalwiki/db";
 
+function statusLabel(value: "passed" | "blocked"): string {
+  return value === "blocked" ? "Needs attention" : "Pass";
+}
+
 export default async function SetupPage() {
   const session = await getSessionContextOptional();
   if (!session) {
@@ -25,8 +29,7 @@ export default async function SetupPage() {
         <p className="workspace-header__eyebrow">Setup</p>
         <h1 className="surface-title">Complete setup before asking</h1>
         <p className="surface-sub">
-          InternalWiki is running. Finish these steps to ensure citations, permissions, and verification checks are
-          operational.
+          InternalWiki is running. Finish these steps so answers are cited, up to date, and access-aware.
         </p>
       </section>
 
@@ -35,10 +38,8 @@ export default async function SetupPage() {
         <div className="data-grid" style={{ marginTop: "0.8rem" }}>
           <div className="data-pill">Connected source: {status.steps.connected ? "Yes" : "No"}</div>
           <div className="data-pill">First sync complete: {status.steps.firstSyncComplete ? "Yes" : "No"}</div>
-          <div className="data-pill">
-            Permission mapping: {status.steps.permissionMappingComplete ? "Yes" : "No"}
-          </div>
-          <div className="data-pill">AI ready: {status.steps.aiReady ? "Yes" : "No"}</div>
+          <div className="data-pill">Access checks: {status.steps.permissionMappingComplete ? "Yes" : "No"}</div>
+          <div className="data-pill">Assistant ready: {status.steps.aiReady ? "Yes" : "No"}</div>
         </div>
 
         <div className="chip-row" style={{ marginTop: "0.9rem" }}>
@@ -46,35 +47,31 @@ export default async function SetupPage() {
             Open source setup
           </a>
           <a href="/app/settings/security" className="chip chip--active setup-permissions-cta">
-            Permissions diagnostics
+            Check access
           </a>
         </div>
       </section>
 
       <section className="surface-card">
-        <h2 className="surface-title">Answer quality contract</h2>
+        <h2 className="surface-title">Answer quality standards</h2>
         <p className="surface-sub">
-          Answers are released only when groundedness, freshness, and permission safety checks pass.
+          Answers are shown only when evidence quality, source recency, and access protection checks pass.
         </p>
 
         <div className="data-grid" style={{ marginTop: "0.8rem" }}>
+          <div className="data-pill">Evidence quality pass rate (7d): {contract.rolling7d.groundednessPassRate.toFixed(2)}%</div>
+          <div className="data-pill">Source recency pass rate (7d): {contract.rolling7d.freshnessPassRate.toFixed(2)}%</div>
           <div className="data-pill">
-            Groundedness pass rate (7d): {contract.rolling7d.groundednessPassRate.toFixed(2)}%
+            Access protection pass rate (7d): {contract.rolling7d.permissionSafetyPassRate.toFixed(2)}%
           </div>
-          <div className="data-pill">
-            Freshness pass rate (7d): {contract.rolling7d.freshnessPassRate.toFixed(2)}%
-          </div>
-          <div className="data-pill">
-            Permission safety pass rate (7d): {contract.rolling7d.permissionSafetyPassRate.toFixed(2)}%
-          </div>
-          <div className="data-pill">Blocked answers (7d): {contract.rolling7d.blocked}</div>
+          <div className="data-pill">Answers held for review (7d): {contract.rolling7d.blocked}</div>
           {contract.latest ? (
             <div className="data-pill">
-              Latest check: {contract.latest.groundednessStatus}/{contract.latest.freshnessStatus}/
-              {contract.latest.permissionSafetyStatus}
+              Latest status: {statusLabel(contract.latest.groundednessStatus)}/
+              {statusLabel(contract.latest.freshnessStatus)}/{statusLabel(contract.latest.permissionSafetyStatus)}
             </div>
           ) : (
-            <div className="data-pill">Latest check: No evaluations yet</div>
+            <div className="data-pill">Latest status: No checks yet</div>
           )}
         </div>
       </section>

@@ -25,6 +25,13 @@ export type AssistantStreamMessage = {
   qualityContract?: AssistantQueryResponse["qualityContract"];
 };
 
+function statusLabel(value: "passed" | "blocked" | undefined): string {
+  if (value === "blocked") {
+    return "Needs attention";
+  }
+  return "Pass";
+}
+
 export function MessageStream(props: {
   loading: boolean;
   messages: AssistantStreamMessage[];
@@ -47,51 +54,37 @@ export function MessageStream(props: {
             <>
               <div className="msg-trust-strip">
                 <span>
-                  Groundedness{" "}
-                  {message.qualityContract?.dimensions.groundedness.status ??
-                    (message.verificationStatus === "blocked" ? "blocked" : "passed")}
+                  Evidence quality{" "}
+                  {statusLabel(
+                    message.qualityContract?.dimensions.groundedness.status ??
+                      (message.verificationStatus === "blocked" ? "blocked" : "passed")
+                  )}
                 </span>
                 <span>
-                  Freshness {message.qualityContract?.dimensions.freshness.status ?? "passed"}
+                  Source recency {statusLabel(message.qualityContract?.dimensions.freshness.status)}
                 </span>
                 <span>
-                  Permission safety {message.qualityContract?.dimensions.permissionSafety.status ?? "passed"}
+                  Access protection {statusLabel(message.qualityContract?.dimensions.permissionSafety.status)}
                 </span>
                 <span>Confidence {Math.round((message.confidence ?? 0) * 100)}%</span>
-                <span>Source score {Math.round(message.sourceScore ?? 0)}</span>
-                <span>{message.claims?.length ?? 0} claims</span>
               </div>
 
               <div className="msg-meta">
                 {message.verificationStatus ? (
                   <span>
-                    Verification {message.verificationStatus === "passed" ? "passed" : "blocked"}
+                    Answer status {message.verificationStatus === "passed" ? "Ready" : "On hold"}
                   </span>
                 ) : null}
                 {typeof message.citationCoverage === "number" ? (
-                  <span>Citation coverage {Math.round(message.citationCoverage * 100)}%</span>
-                ) : null}
-                {typeof message.permissionFilteredOutCount === "number" ? (
-                  <span>Permission filtered {message.permissionFilteredOutCount}</span>
+                  <span>Evidence coverage {Math.round(message.citationCoverage * 100)}%</span>
                 ) : null}
                 {message.qualityContract?.allowHistoricalEvidence ? (
-                  <span>Historical evidence override on</span>
+                  <span>Including older sources</span>
                 ) : null}
-                {typeof message.missingAuthorCount === "number" ? (
-                  <span>Missing author {message.missingAuthorCount}</span>
-                ) : null}
-                {typeof message.missingDateCount === "number" ? (
-                  <span>Missing date {message.missingDateCount}</span>
-                ) : null}
-                <span>Model {message.model ?? "unknown"}</span>
-                {typeof message.retrievalMs === "number" ? <span>Retrieval {message.retrievalMs}ms</span> : null}
-                {typeof message.generationMs === "number" ? <span>Generation {message.generationMs}ms</span> : null}
-                {props.firstTokenMs !== null ? <span>First token {props.firstTokenMs}ms</span> : null}
-                {props.completionMs !== null ? <span>Done {props.completionMs}ms</span> : null}
               </div>
               {message.verificationStatus === "blocked" && message.verificationReasons?.length ? (
                 <p className="error-banner">
-                  {message.verificationReasons.join(" ")}
+                  This answer is on hold: {message.verificationReasons.join(" ")}
                 </p>
               ) : null}
             </>
@@ -106,14 +99,14 @@ export function MessageStream(props: {
                   className="citation-link"
                   onClick={() => props.onCitationClick(citation)}
                 >
-                  [{index + 1}] {citation.chunkId}
+                  Source {index + 1}
                 </button>
               ))}
             </div>
           ) : null}
 
           {message.claims?.length ? (
-            <div className="citation-row" aria-label="Claim mapping">
+            <div className="citation-row" aria-label="Evidence checks">
               {message.claims.map((claim) => (
                 claim.citations[0] ? (
                   <button
@@ -122,11 +115,12 @@ export function MessageStream(props: {
                     className="citation-link"
                     onClick={() => props.onCitationClick(claim.citations[0] as Citation)}
                   >
-                    Claim {claim.order + 1}: {claim.supported ? "supported" : "unsupported"} ({claim.citations.length})
+                    Point {claim.order + 1}: {claim.supported ? "supported" : "needs more evidence"} (
+                    {claim.citations.length})
                   </button>
                 ) : (
                   <span key={`${message.id}-${claim.order}`} className="citation-link">
-                    Claim {claim.order + 1}: unsupported
+                    Point {claim.order + 1}: needs more evidence
                   </span>
                 )
               ))}

@@ -53,7 +53,7 @@ export function AskComposer(props: {
         id="ask-input"
         rows={lineCount}
         value={props.value}
-        placeholder={props.placeholder ?? "Ask anything about your organization knowledge"}
+        placeholder={props.placeholder ?? "Ask a question about your company knowledge"}
         className="ask-input"
         onChange={(event) => props.onValueChange(event.target.value)}
         onKeyDown={(event) => {
@@ -82,7 +82,7 @@ export function AskComposer(props: {
           disabled={props.loading || props.value.trim().length < 2}
           onClick={props.onSubmit}
         >
-          {props.loading ? "Thinking..." : "Send"}
+          {props.loading ? "Thinking..." : "Ask"}
         </button>
       </div>
     </section>

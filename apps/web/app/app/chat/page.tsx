@@ -21,11 +21,11 @@ export default async function ChatPage({
   return (
     <AssistantWorkspace
       orgId={session.organizationId}
-      title={selectedThread ? selectedThread.thread.title : "Threaded assistant workspace"}
+      title={selectedThread ? selectedThread.thread.title : "Assistant conversations"}
       subtitle={
         selectedThread
           ? `Continue with cited context from ${selectedThread.messages.length} prior messages.`
-          : "Follow up across decisions, runbooks, and requirements without losing source traceability."
+          : "Follow up on decisions and requirements with sources attached."
       }
       defaultMode="ask"
       quickMode={false}

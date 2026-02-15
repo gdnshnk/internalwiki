@@ -117,6 +117,32 @@ function connectorLabel(connectorType: string): string {
   }
 }
 
+function connectorStatusLabel(status: ConnectorStatus): string {
+  switch (status) {
+    case "active":
+      return "Active";
+    case "reauth_required":
+      return "Reconnect required";
+    case "disabled":
+      return "Disabled";
+    default:
+      return status;
+  }
+}
+
+function runStatusLabel(status: ConnectorRun["status"]): string {
+  switch (status) {
+    case "running":
+      return "Running";
+    case "completed":
+      return "Completed";
+    case "failed":
+      return "Failed";
+    default:
+      return status;
+  }
+}
+
 export function ConnectorOnboardingManager(props: {
   orgId: string;
   initialConnectors: ConnectorAccountPublic[];
@@ -346,7 +372,7 @@ export function ConnectorOnboardingManager(props: {
   }
 
   async function deleteConnector(connectorId: string): Promise<void> {
-    const confirmed = window.confirm("Delete this connector? Sync history remains auditable but integration access is removed.");
+    const confirmed = window.confirm("Delete this integration? Existing activity history will remain available.");
     if (!confirmed) {
       return;
     }
@@ -382,7 +408,7 @@ export function ConnectorOnboardingManager(props: {
       <section className="surface-card">
         <h2 className="surface-title">Quick connect (recommended)</h2>
         <p className="surface-sub">
-          Connect Slack and Microsoft 365 with OAuth. InternalWiki auto-queues first sync and setup readiness checks.
+          Connect Slack and Microsoft 365. First sync starts automatically so your team can ask questions sooner.
         </p>
 
         <div className="chip-row" style={{ marginTop: "0.8rem", flexWrap: "wrap" }}>
@@ -430,7 +456,7 @@ export function ConnectorOnboardingManager(props: {
       <section className="surface-card">
         <h2 className="surface-title">Add source integration</h2>
         <p className="surface-sub">
-          Advanced/manual path. Use this when OAuth is unavailable or when you need explicit token entry.
+          Use this manual path when OAuth is unavailable or when your IT team provides tokens directly.
         </p>
 
         <div className="connector-form-grid" style={{ marginTop: "0.8rem" }}>
@@ -516,7 +542,7 @@ export function ConnectorOnboardingManager(props: {
 
       <section className="surface-card">
         <h2 className="surface-title">Connected sources</h2>
-        <p className="surface-sub">Run syncs, inspect failures, and rotate connector credentials without API calls.</p>
+        <p className="surface-sub">Run syncs, inspect failures, and update integration credentials in one place.</p>
 
         {sortedConnectors.length === 0 ? (
           <p className="surface-sub" style={{ marginTop: "0.8rem" }}>
@@ -534,14 +560,14 @@ export function ConnectorOnboardingManager(props: {
                 <article key={connector.id} className="connector-card">
                   <header className="connector-card__head">
                     <div>
-                      <h3>{connector.displayName ?? connector.connectorType}</h3>
+                      <h3>{connector.displayName ?? connectorLabel(connector.connectorType)}</h3>
                       <p>
-                        {connector.connectorType} · Updated {formatTime(connector.updatedAt)}
+                        {connectorLabel(connector.connectorType)} · Updated {formatTime(connector.updatedAt)}
                       </p>
                     </div>
                     <div className="chip-row">
                       <span className={`chip ${connector.status === "active" ? "chip--active" : ""}`}>
-                        {connector.status}
+                        {connectorStatusLabel(connector.status)}
                       </span>
                       <span className="chip">Last sync {formatTime(connector.lastSyncedAt)}</span>
                     </div>
@@ -549,7 +575,7 @@ export function ConnectorOnboardingManager(props: {
 
                   {latestRun ? (
                     <div className="connector-run-summary">
-                      <span className="chip">{latestRun.status}</span>
+                      <span className="chip">{runStatusLabel(latestRun.status)}</span>
                       <span className="chip">
                         Seen {latestRun.itemsSeen ?? 0} · Changed {latestRun.itemsChanged ?? 0}
                       </span>
@@ -686,7 +712,7 @@ export function ConnectorOnboardingManager(props: {
                       {runHistory.map((run) => (
                         <div key={run.id} className="connector-run-row">
                           <span>{formatTime(run.startedAt)}</span>
-                          <span>{run.status}</span>
+                          <span>{runStatusLabel(run.status)}</span>
                           <span>
                             {run.itemsChanged ?? 0}/{run.itemsSeen ?? 0}
                           </span>
